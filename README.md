@@ -1,20 +1,95 @@
-### Libigl CoMISo
+# Libigl CoMISo Integration
 
-This repo contains the [Libigl](https://libigl.github.io)'s
-[CoMISo](https://www.graphics.rwth-aachen.de/software/comiso/) integration, which was removed in
-Libigl [v2.6.0 release](https://github.com/libigl/libigl/releases/tag/v2.6.0)
-([PR2384](https://github.com/libigl/libigl/pull/2384)). This repo is based on the CoMISo integration
-from [Libigl v2.5.0](https://github.com/libigl/libigl/releases/tag/v2.5.0) with an updated cmake
-setup and updated CoMISo and GMM++ dependency. Libigl tutorial 505 is also included in this repo.
+This repository provides a standalone integration of [CoMISo](https://www.graphics.rwth-aachen.de/software/comiso/) (Constrained Mixed-Integer Solver) with [Libigl](https://libigl.github.io), preserving the functionality that was removed from Libigl in [v2.6.0](https://github.com/libigl/libigl/releases/tag/v2.6.0) ([PR #2384](https://github.com/libigl/libigl/pull/2384)).
 
-This repo is created by Qingnan Zhou for pure research purposes.
+## Overview
 
-#### Build and run
+CoMISo is a powerful solver for optimizing discrete quadratic energies subject to linear and integer constraints. It's particularly useful for geometry processing applications such as:
 
-```sh
-mkdir build
-cd build
-cmake .. -DLIBIGL_BUILD_TUTORIALS=On -DLIBIGL_GLFW=On
-make
-./tutorial_505
+- **Mixed-Integer Quadrangulation (MIQ)** - Generate high-quality quad meshes
+- **Frame Field Generation** - Compute smooth frame fields on surfaces
+- **N-RoSy Field Design** - Create N-directional fields with singularities
+
+This repository is based on the CoMISo integration from [Libigl v2.5.0](https://github.com/libigl/libigl/releases/tag/v2.5.0) with:
+- Updated CMake build system using CPM (CMake Package Manager)
+- Updated CoMISo and GMM++ dependencies
+- Preserved Libigl tutorials 505 (MIQ) and 506 (FrameField)
+- Modern C++14 compatibility
+
+*Created by Qingnan Zhou for research purposes.*
+
+## Features
+
+### Available CoMISo Functions
+- `igl::copyleft::comiso::miq` - Mixed-Integer Quadrangulation
+- `igl::copyleft::comiso::nrosy` - N-directional field generation
+- `igl::copyleft::comiso::frame_field` - Frame field computation
+
+### Included Tutorials
+- **Tutorial 505**: Mixed-Integer Quadrangulation (MIQ) demonstration
+- **Tutorial 506**: Frame field generation and visualization
+
+## Dependencies
+
+This project automatically fetches and builds the following dependencies via CMake:
+
+- **Libigl** - Core geometry processing library
+- **CoMISo** - Constrained Mixed-Integer Solver
+- **GMM++** - Generic Matrix Template Library
+- **Eigen** - Linear algebra library
+- **GLFW** - OpenGL windowing (for tutorials)
+
+## Build Instructions
+
+### Prerequisites
+- CMake 3.14 or higher
+- C++14 compatible compiler (GCC 7+, Clang 5+, MSVC 2017+)
+- OpenGL development libraries (for tutorials)
+
+### Basic Build
+```bash
+# Clone the repository
+git clone https://github.com/qnzhou/libigl-comiso.git
+cd libigl-comiso
+
+# Create build directory
+mkdir build && cd build
+
+# Configure with tutorials enabled
+cmake .. -DLIBIGL_BUILD_TUTORIALS=ON -DLIBIGL_GLFW=ON
+
+# Build
+make -j$(nproc)
 ```
+
+## Usage
+
+### Running Tutorials
+
+After building with tutorials enabled:
+
+```bash
+# Run Mixed-Integer Quadrangulation tutorial
+./505_MIQ
+
+# Run Frame Field tutorial  
+./506_FrameField
+```
+
+## License
+
+This project inherits the licensing from its components:
+- Libigl components: [MPL2](https://github.com/libigl/libigl/blob/main/LICENSE.MPL2) and [GPL](https://github.com/libigl/libigl/blob/main/LICENSE.GPL)
+- CoMISo: [GPL v3](https://www.gnu.org/licenses/gpl-3.0.html)
+
+## References
+
+- [CoMISo: Constrained Mixed-Integer Solver](https://www.graphics.rwth-aachen.de/software/comiso/)
+- [Libigl: A simple C++ geometry processing library](https://libigl.github.io)
+- [Mixed-Integer Quadrangulation Paper](https://www.graphics.rwth-aachen.de/publication/03234/)
+
+## Acknowledgments
+
+- Original CoMISo developers at RWTH Aachen University
+- Libigl development team
+- Contributors to the geometry processing community
