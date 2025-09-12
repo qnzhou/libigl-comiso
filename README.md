@@ -14,7 +14,7 @@ This repo is created by Qingnan Zhou for pure research purposes.
 ```sh
 mkdir build
 cd build
-cmake .. -DLIBIGL_BUILD_TUTORIALS=On
+cmake .. -DLIBIGL_BUILD_TUTORIALS=On -DLIBIGL_GLFW=On
 make
 ./tutorial_505
 ```

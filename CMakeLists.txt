@@ -35,7 +35,9 @@ if(LIBIGL_POSITION_INDEPENDENT_CODE)
 endif()
 
 if(LIBIGL_BUILD_TUTORIALS)
-    set(LIBIGL_GLFW ON CACHE BOOL "Use libigl's glfw wrapper" FORCE)
-    add_executable(505_miq ${CMAKE_CURRENT_LIST_DIR}/tutorial/505_MIQ/main.cpp)
-    target_link_libraries(505_miq PRIVATE igl_copyleft::comiso igl::glfw igl::tutorial_data)
+    add_executable(505_MIQ ${CMAKE_CURRENT_LIST_DIR}/tutorial/505_MIQ/main.cpp)
+    target_link_libraries(505_MIQ PRIVATE igl_copyleft::comiso igl::glfw igl::tutorial_data)
+
+    add_executable(506_FrameField ${CMAKE_CURRENT_LIST_DIR}/tutorial/506_FrameField/main.cpp)
+    target_link_libraries(506_FrameField PRIVATE igl_copyleft::comiso igl::glfw igl::tutorial_data)
 endif()
