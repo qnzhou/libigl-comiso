@@ -41,3 +41,18 @@ if(LIBIGL_BUILD_TUTORIALS)
     add_executable(506_FrameField ${CMAKE_CURRENT_LIST_DIR}/tutorial/506_FrameField/main.cpp)
     target_link_libraries(506_FrameField PRIVATE igl_copyleft::comiso igl::glfw igl::tutorial_data)
 endif()
+
+option(LIBIGL_COMISO_BUILD_TESTS "Build the libigl comiso tests" OFF)
+if (LIBIGL_COMISO_BUILD_TESTS)
+    include(CTest)
+    enable_testing()
+    include(catch2)
+
+    file(GLOB TEST_FILES "${CMAKE_CURRENT_LIST_DIR}/tests/include/igl/copyleft/comiso/*.cpp")
+    add_executable(igl_comiso_tests ${TEST_FILES})
+    target_include_directories(igl_comiso_tests PRIVATE ${CMAKE_CURRENT_LIST_DIR}/tests)
+    target_link_libraries(igl_comiso_tests PRIVATE
+        igl_copyleft::comiso
+        igl::tests_data
+        Catch2::Catch2WithMain)
+endif()

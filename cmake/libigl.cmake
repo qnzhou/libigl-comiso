@@ -18,3 +18,7 @@ CPMAddPackage(
 if(LIBIGL_BUILD_TUTORIALS)
     include(${libigl_SOURCE_DIR}/cmake/recipes/external/libigl_tutorial_data.cmake)
 endif()
+
+if (LIBIGL_COMISO_BUILD_TESTS)
+    include(${libigl_SOURCE_DIR}/cmake/recipes/external/libigl_tests_data.cmake)
+endif()
