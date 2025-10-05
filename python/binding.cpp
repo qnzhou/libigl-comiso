@@ -114,8 +114,8 @@ ACM SIGGRAPH 2009, Article No. 77
 
 :param V: #V by 3 list of mesh vertex 3D positions
 :param F: #F by 3 list of faces indices in V
-:param PD1: #V by 3 first line of the Jacobian per triangle
-:param PD2: #V by 3 second line of the Jacobian per triangle (if empty, will be orthogonal to PD1)
+:param PD1: #F by 3 first line of the Jacobian per triangle
+:param PD2: #F by 3 second line of the Jacobian per triangle (if empty, will be orthogonal to PD1)
 :param gradientSize: global scaling for the gradient (controls the quads resolution)
 :param stiffness: weight for the stiffness iterations (reserved but not used)
 :param directRound: greedily round all integer variables at once (improves speed but lowers quality)

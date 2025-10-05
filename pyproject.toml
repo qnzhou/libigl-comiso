@@ -22,9 +22,8 @@ install.components = ["LIBIGL_COMISO_Python_Runtime"]
 wheel.packages = ["python/igl_comiso"]
 build-dir = "build-python"
 editable.rebuild = false
-#cmake.build-type = "Release"
-cmake.build-type = "Debug"
-install.strip = false
+cmake.build-type = "Release"
+# install.strip = false
 # build.verbose = true
 # editable.verbose = false
 

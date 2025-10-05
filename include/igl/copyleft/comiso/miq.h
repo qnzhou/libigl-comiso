@@ -28,8 +28,8 @@ namespace igl
     ///  \bug Meshes with boundaries are not hendled properly i.e., jagged edges along the boundary are possible
     /// @param[in] V                 #V by 3 list of mesh vertex 3D positions
     /// @param[in] F                 #F by 3 list of faces indices in V
-    /// @param[in] PD1               #V by 3 first line of the Jacobian per triangle
-    /// @param[in] PD2               #V by 3 second line of the Jacobian per triangle (optional, if empty it will be a vector in the tangent plane orthogonal to PD1)
+    /// @param[in] PD1               #F by 3 first line of the Jacobian per triangle
+    /// @param[in] PD2               #F by 3 second line of the Jacobian per triangle (optional, if empty it will be a vector in the tangent plane orthogonal to PD1)
     /// @param[in] gradientSize      global scaling for the gradient (controls the quads resolution)
     /// @param[in] stiffness         weight for the stiffness iterations (Reserved but not used!)
     /// @param[in] directRound       greedily round all integer variables at once (greatly improves optimization speed but lowers quality)
