@@ -56,3 +56,23 @@ if (LIBIGL_COMISO_BUILD_TESTS)
         igl::tests_data
         Catch2::Catch2WithMain)
 endif()
+
+if(SKBUILD)
+    if(APPLE)
+        set(CMAKE_INSTALL_RPATH @loader_path)
+    elseif(UNIX)
+        set(CMAKE_INSTALL_RPATH $ORIGIN)
+    endif()
+
+    include(nanobind)
+    set(PY_SRC_FILE "${PROJECT_SOURCE_DIR}/python/binding.cpp")
+    nanobind_add_module(pyigl_comiso NB_STATIC ${PY_SRC_FILE})
+    target_compile_features(pyigl_comiso PRIVATE cxx_std_20)
+    target_link_libraries(pyigl_comiso PUBLIC igl_copyleft::comiso)
+
+    install(TARGETS pyigl_comiso CoMISo LIBRARY
+        COMPONENT LIBIGL_COMISO_Python_Runtime
+        DESTINATION ${SKBUILD_PLATLIB_DIR}/igl_comiso)
+    add_library(igl_copyleft::comiso::python ALIAS pyigl_comiso)
+
+endif()

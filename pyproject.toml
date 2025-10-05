@@ -1,0 +1,38 @@
+[build-system]
+requires = [
+    "scikit-build-core==0.11.6",
+]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "libigl-comiso"
+maintainers = [{name = "Qingnan Zhou", email = "qnzhou@gmail.com"}]
+description = "LibIGL CoMISo Integration"
+requires-python = ">=3.9"
+dynamic = ["version"]
+readme = "README.md"
+
+dependencies = [
+    "numpy",
+]
+
+[tool.scikit-build]
+install.components = ["LIBIGL_COMISO_Python_Runtime"]
+wheel.packages = ["python/igl_comiso"]
+build-dir = "build-python"
+editable.rebuild = false
+#cmake.build-type = "Release"
+cmake.build-type = "Debug"
+install.strip = false
+# build.verbose = true
+# editable.verbose = false
+
+[tool.scikit-build.cmake.define]
+LIBIGL_COMISO_BUILD_TESTS = false
+LIBIGL_BUILD_TUTORIALS = false
+LIBIGL_POSITION_INDEPENDENT_CODE = true
+LIBIGL_USE_STATIC_LIBRARY = false
+
+[tool.scikit-build.metadata.version]
+provider = "scikit_build_core.metadata.regex"
+input = "python/igl_comiso/__init__.py"
