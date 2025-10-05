@@ -76,6 +76,38 @@ After building with tutorials enabled:
 ./506_FrameField
 ```
 
+## Python Bindings
+
+Python bindings are available for all CoMISo functions: `nrosy()`, `miq()`, and `frame_field()`.
+
+### Build
+
+```bash
+cd python
+pip install .
+```
+
+### Usage Example
+
+```python
+import numpy as np
+import igl_comiso
+
+# Load triangle mesh (V: vertices, F: faces)
+# V, F = load_your_mesh()
+
+# Generate 4-RoSy field with constraints
+b = np.array([0, 10, 20])  # constrained face indices
+bc = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])  # directions
+R, S = igl_comiso.nrosy(V, F, b, bc, N=4)
+
+# Create quad mesh parameterization
+UV, FUV = igl_comiso.miq(V, F, R, np.array([]), gradientSize=30.0)
+
+print(f"Generated {FUV.shape[0]} quads from {F.shape[0]} triangles")
+```
+
+
 ## License
 
 This project inherits the licensing from its components:
