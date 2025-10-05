@@ -22,7 +22,6 @@ target_compile_features(igl_comiso ${igl_comiso_scope} cxx_std_14)
 target_include_directories(igl_comiso ${igl_comiso_scope} ${CMAKE_CURRENT_LIST_DIR}/include)
 target_link_libraries(igl_comiso ${igl_comiso_scope}
     igl::core
-    #igl_copyleft::core
     CoMISo::CoMISo
 )
 add_library(igl_copyleft::comiso ALIAS igl_comiso)
