@@ -83,7 +83,7 @@ Python bindings are available for all CoMISo functions: `nrosy()`, `miq()`, and 
 ### Build
 
 ```bash
-cd python
+# From the libigl-comiso folder
 pip install .
 ```
 
