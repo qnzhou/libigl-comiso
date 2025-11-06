@@ -90,7 +90,7 @@ igl::compute_frame_field_bisectors(V, F, X1, X2, BIS1, BIS2);
 igl::comb_cross_field(V, F, BIS1, BIS2, BIS1_combed, BIS2_combed);
 
 // Find the integer mismatches
-    igl::cross_field_mismatch(V, F, BIS1_combed, BIS2_combed, true, MMatch);
+igl::cross_field_mismatch(V, F, BIS1_combed, BIS2_combed, true, MMatch);
 
 // Find the singularities
 igl::find_cross_field_singularities(V, F, MMatch, isSingularity, singularityIndex);
@@ -124,6 +124,9 @@ igl::copyleft::comiso::miq(V,
 
   igl::readDMAT(test_common::data_path("3holes-miq-UV.dmat"),UV_ref);
   igl::readDMAT(test_common::data_path("3holes-miq-FUV.dmat"),FUV_ref);
+
+  std::cout << UV.row(0) << std::endl;
+  std::cout << UV_ref.row(0) << std::endl;
 
   REQUIRE (1e-6 > (UV-UV_ref).array().abs().maxCoeff());
   REQUIRE (1e-6 > (FUV-FUV_ref).array().abs().maxCoeff());

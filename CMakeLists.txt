@@ -6,6 +6,9 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/cmake)
 include(comiso)
 include(libigl)
 
+#include(sanitizers)
+#add_sanitizer_support(thread)
+
 file(GLOB INC_FILES ${CMAKE_CURRENT_LIST_DIR}/include/*.h)
 file(GLOB SRC_FILES ${CMAKE_CURRENT_LIST_DIR}/include/*.impl)
 

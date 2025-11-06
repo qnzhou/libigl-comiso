@@ -1504,9 +1504,20 @@ IGL_INLINE void igl::copyleft::comiso::miq(
   const std::vector<int> &roundVertices,
   const std::vector<std::vector<int>> &hardFeatures)
 {
+  DerivedV X1, X2;
+  X1 = PD1;
+  assert(X1.rows() == F.rows());
+
+  if (PD2.rows() != F.rows()) {
+    DerivedV B1, B2, B3;
+    igl::local_basis(V, F, B1, B2, B3);
+    X2 = igl::rotate_vectors(X1, Eigen::VectorXd::Constant(1, igl::PI / 2), B1, B2);
+  } else {
+    X2 = PD2;
+  }
 
   DerivedV BIS1, BIS2;
-  igl::compute_frame_field_bisectors(V, F, PD1, PD2, BIS1, BIS2);
+  igl::compute_frame_field_bisectors(V, F, X1, X2, BIS1, BIS2);
 
   DerivedV BIS1_combed, BIS2_combed;
   igl::comb_cross_field(V, F, BIS1, BIS2, BIS1_combed, BIS2_combed);
@@ -1521,7 +1532,7 @@ IGL_INLINE void igl::copyleft::comiso::miq(
   igl::cut_mesh_from_singularities(V, F, Handle_MMatch, Handle_Seams);
 
   DerivedV PD1_combed, PD2_combed;
-  igl::comb_frame_field(V, F, PD1, PD2, BIS1_combed, BIS2_combed, PD1_combed, PD2_combed);
+  igl::comb_frame_field(V, F, X1, X2, BIS1_combed, BIS2_combed, PD1_combed, PD2_combed);
 
   igl::copyleft::comiso::miq(V,
     F,
