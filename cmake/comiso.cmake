@@ -13,7 +13,7 @@ include(CPM)
 CPMAddPackage(
     NAME comiso
     GIT_REPOSITORY https://graphics.rwth-aachen.de:9000/CoMISo/CoMISo.git
-    GIT_TAG 0f9781a0433684b3b934732fd846fe07e522ca4d
+    GIT_TAG d6e0299a0dd3aebd5fa4cf398d1d6d64ee7cf27f
 )
 set_target_properties(CoMISo PROPERTIES
     CXX_STANDARD ${COMISO_CXX_STANDARD}
