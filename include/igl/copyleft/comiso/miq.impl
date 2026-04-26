@@ -624,7 +624,19 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::solveP
   // copy the user constraints number
   for (const auto & element : hardFeatures)
   {
-    addSharpEdgeConstraint(element[0], element[1]);
+    if (element.size() < 2)
+    {
+      std::cerr << "WARNING: hardFeatures entry has fewer than 2 ids; skipped." << std::endl;
+      continue;
+    }
+    const int fid = element[0];
+    const int vid = element[1];
+    if (fid < 0 || fid >= static_cast<int>(F.rows()) || vid < 0 || vid > 2)
+    {
+      std::cerr << "WARNING: hardFeatures (" << fid << "," << vid << ") out of range; skipped." << std::endl;
+      continue;
+    }
+    addSharpEdgeConstraint(fid, vid);
   }
 
   ///Initializing Matrix
@@ -748,10 +760,10 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::findFi
   Hard_constraints.clear();
 
   n_fixed_vars=0;
-  //fix the first singularity
+  //fix the first singularity that has an incident face
   for (unsigned int v=0;v<V.rows();v++)
   {
-    if (singular(v))
+    if (singular(v) && v < VF.size() && !VF[v].empty())
     {
       addFixedVertex(v);
       UV.row(v) << 0,0;
@@ -759,10 +771,18 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::findFi
     }
   }
 
-  ///if anything fixed fix the first
-  addFixedVertex(0);
-  UV.row(0) << 0,0;
-  std::cerr << "No vertices to fix, I am fixing the first vertex to the origin!" << std::endl;
+  ///if nothing fixed, fix the first vertex with an incident face
+  for (unsigned int v=0;v<V.rows();v++)
+  {
+    if (v < VF.size() && !VF[v].empty())
+    {
+      addFixedVertex(v);
+      UV.row(v) << 0,0;
+      std::cerr << "No vertices to fix, I am fixing vertex " << v << " to the origin!" << std::endl;
+      return;
+    }
+  }
+  std::cerr << "ERROR: no vertex has an incident face; cannot fix any vertex." << std::endl;
 }
 
 ///find hard constraint depending if using or not
@@ -777,6 +797,8 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::findFi
 template <typename DerivedV, typename DerivedF>
 IGL_INLINE int igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::getFirstVertexIndex(int v)
 {
+  if (v < 0 || v >= static_cast<int>(VF.size()) || VF[v].empty())
+    return -1;
   return Fcut(VF[v][0],VFi[v][0]);
 }
 
@@ -794,6 +816,7 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::fixBlo
     ///get first index of the vertex that must blocked
     //int index=v->vertex_index[0];
     int index = getFirstVertexIndex(v);
+    assert(index >= 0); // findFixedVertField guarantees v has an incident face
 
     ///multiply times 2 because of uv
     int indexvert = index*2;
@@ -826,6 +849,7 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::addSin
     if (singular(v))
     {
       int index0= getFirstVertexIndex(v);
+      if (index0 < 0) continue;
       ids_to_round.push_back( index0*2   );
       ids_to_round.push_back((index0*2)+1);
     }
@@ -838,8 +862,16 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::addToR
   for(auto index : ids)
   {
     if (index < 0 || index >= V.rows())
+    {
       std::cerr << "WARNING: Ignored round vertex constraint, vertex " << index << " does not exist in the mesh." << std::endl;
+      continue;
+    }
     int index0 = getFirstVertexIndex(index);
+    if (index0 < 0)
+    {
+      std::cerr << "WARNING: Ignored round vertex constraint, vertex " << index << " has no incident face." << std::endl;
+      continue;
+    }
     ids_to_round.push_back( index0 * 2   );
     ids_to_round.push_back((index0 * 2)+1);
   }
@@ -1036,12 +1068,20 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::buildU
 
   for (unsigned int i = 0; i < num_userdefined_constraint; i++)
   {
-    for (unsigned int j = 0; j < userdefined_constraints[i].size()-1; ++j)
+    const size_t row_size = userdefined_constraints[i].size();
+    if (row_size == 0)
+    {
+      std::cerr << "WARNING: empty user-defined constraint row " << i << " skipped." << std::endl;
+      constraints_rhs[constr_row] = 0;
+      constr_row += 1;
+      continue;
+    }
+    for (size_t j = 0; j + 1 < row_size; ++j)
     {
       Constraints.coeffRef(constr_row, j) = userdefined_constraints[i][j];
     }
 
-    constraints_rhs[constr_row] = userdefined_constraints[i][userdefined_constraints[i].size()-1];
+    constraints_rhs[constr_row] = userdefined_constraints[i][row_size-1];
     constr_row +=1;
   }
 }
@@ -1052,7 +1092,7 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::mixedI
                                                                                             bool directRound,
                                                                                             unsigned int localIter)
 {
-  COMISO::ConstrainedSolver::Vector _X(n_vert_vars*2+n_integer_vars*2);
+  COMISO::ConstrainedSolver::Vector _X = COMISO::ConstrainedSolver::Vector::Zero(n_vert_vars*2+n_integer_vars*2);
   X = std::vector<double>((n_vert_vars+n_integer_vars)*2);
   if (DEBUGPRINT)
     printf("\n ALLOCATED X \n");
@@ -1074,7 +1114,7 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::mixedI
   if (DEBUGPRINT)
     printf("\n ALLOCATED QMM STRUCTURES \n");
 
-  COMISO::ConstrainedSolver::Vector B(sizeMatrix);
+  COMISO::ConstrainedSolver::Vector B = COMISO::ConstrainedSolver::Vector::Zero(sizeMatrix);
   //std::vector<double> B(sizeMatrix,0);  // rhs
 
   if (DEBUGPRINT)
