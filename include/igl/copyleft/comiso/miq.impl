@@ -312,9 +312,10 @@ namespace comiso {
     IGL_INLINE void addSharpEdgeConstraint(int fid, int vid);
 
     /// Add a hard linear constraint forcing the parallel-transported orthogonal
-    /// component of the accumulated UV displacement around `loop` to zero.
-    /// `loop` is a closed sequence of vertex indices; consecutive pairs must be
-    /// mesh edges and the implicit closing edge is from loop.back() to loop.front().
+    /// component of the accumulated UV displacement along a vertex chain to zero.
+    /// Closed loop: loop.front() == loop.back(), e.g. [v0, v1, v2, v0].
+    /// Open chain:  loop.front() != loop.back(), e.g. [v0, v1, v2].
+    /// In both cases edges are consecutive pairs loop[i]->loop[i+1].
     /// `axis` is 0 (U) or 1 (V) in the starting face's UV frame.
     IGL_INLINE void addLoopConstraint(const std::vector<int> &loop, int axis);
 
@@ -1379,9 +1380,13 @@ template <typename DerivedV, typename DerivedF>
 IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::addLoopConstraint(const std::vector<int> &loop, int axis)
 {
   const int n = static_cast<int>(loop.size());
-  if (n < 2)
+  // A closed loop has loop.front() == loop.back() (e.g. [v0,v1,v2,v0]).
+  // An open chain has distinct endpoints (e.g. [v0,v1,v2]).
+  // In both cases edges are consecutive pairs loop[i] -> loop[i+1], i=0..n-2.
+  const bool is_closed = (n >= 2 && loop.front() == loop.back());
+  if (n < 2 || (is_closed && n < 3))
   {
-    std::cerr << "WARNING: loop with fewer than 2 vertices skipped." << std::endl;
+    std::cerr << "WARNING: loop/chain too short; skipped." << std::endl;
     return;
   }
   if (axis != 0 && axis != 1)
@@ -1390,13 +1395,13 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::addLoo
     return;
   }
 
-  // Resolve face per directed loop edge (v_i, v_{(i+1)%n}).
-  std::vector<int> face(n);   // f_i
-  std::vector<int> k_local(n); // local edge in f_i s.t. F(f_i, k)=v_i
-  for (int i = 0; i < n; ++i)
+  const int num_edges = n - 1;
+  std::vector<int> face(num_edges);
+  std::vector<int> k_local(num_edges);
+  for (int i = 0; i < num_edges; ++i)
   {
     const int v_curr = loop[i];
-    const int v_next = loop[(i + 1) % n];
+    const int v_next = loop[i + 1];
     int k = -1;
     int f = faceOfHalfEdge(v_curr, v_next, k);
     if (f < 0)
@@ -1431,7 +1436,7 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::addLoo
     return std::make_pair(nx, ny);
   };
 
-  for (int i = 0; i < n; ++i)
+  for (int i = 0; i < num_edges; ++i)
   {
     const int f_i = face[i];
     const int k_curr = k_local[i];
@@ -1455,12 +1460,11 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::addLoo
       c[cut_curr * 2 + 1] -= ny;
     }
 
-    // Advance rotation: walk fan from f_i to f_{i+1} around shared vertex
-    // v_{(i+1)%n}. The incoming half-edge of f_i at that vertex is k_curr.
-    if (i + 1 < n) // for closure we don't update n_n; constraint is over edges 0..n-1 only
+    // Advance rotation to next edge's frame around the shared vertex.
+    if (i + 1 < num_edges)
     {
-      const int v_shared = loop[(i + 1) % n];
-      const int f_next = face[(i + 1) % n];
+      const int v_shared = loop[i + 1]; // safe: i+1 <= num_edges-1 = n-2 < n-1
+      const int f_next = face[i + 1];
       if (f_i != f_next)
       {
         int dr = fanWalkRotation(v_shared, f_i, k_curr, f_next);
