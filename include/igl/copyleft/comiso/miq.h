@@ -39,8 +39,8 @@ namespace igl
     /// @param[in] singularityRound  set true/false to decide if the singularities' coordinates should be rounded to the nearest integers
     /// @param[in] roundVertices     id of additional vertices that should be snapped to integer coordinates
     /// @param[in] hardFeatures      #H by 2 list of (face_id, local_vertex_id) pairs identifying edges to be snapped to integer coordinates; local_vertex_id is the index of the edge's first vertex within the face (0, 1, or 2)
-    /// @param[in] loops             list of vertex chains; a closed loop repeats the first vertex at the end (e.g. [v_0,...,v_{n-1},v_0]); an open chain does not (e.g. [v_0,...,v_{n-1}]); edges are consecutive pairs in both cases
-    /// @param[in] loop_orthogonal_axis  per-loop initial orthogonal axis in the starting face's UV frame (0 = U, 1 = V). When non-empty, must have the same length as `loops`. Adds one hard linear constraint per loop forcing the parallel-transported orthogonal component of the accumulated UV displacement around the loop to zero.
+    /// @param[in] chains             list of vertex chains; a closed loop repeats the first vertex at the end (e.g. [v_0,...,v_{n-1},v_0]); an open chain does not (e.g. [v_0,...,v_{n-1}]); edges are consecutive pairs in both cases
+    /// @param[in] chain_orthogonal_axis  per-loop initial orthogonal axis in the starting face's UV frame (0 = U, 1 = V). When non-empty, must have the same length as `chains`. Adds one hard linear constraint per loop forcing the parallel-transported orthogonal component of the accumulated UV displacement around the loop to zero.
     /// @param[out] UV                 #UV by 2 list of vertices in 2D
     /// @param[out] FUV                #FUV by 3 list of face indices in UV
     ///
@@ -61,8 +61,8 @@ namespace igl
       bool singularityRound = true,
       const std::vector<int> &roundVertices = std::vector<int>(),
       const std::vector<std::vector<int>> &hardFeatures = std::vector<std::vector<int> >(),
-      const std::vector<std::vector<int>> &loops = std::vector<std::vector<int> >(),
-      const std::vector<int> &loop_orthogonal_axis = std::vector<int>());
+      const std::vector<std::vector<int>> &chains = std::vector<std::vector<int> >(),
+      const std::vector<int> &chain_orthogonal_axis = std::vector<int>());
 
     /// miq Helper function that allows to directly provided pre-combed bisectors for an already cut mesh
     ///
@@ -85,8 +85,8 @@ namespace igl
     /// @param[in] singularityRound   set true/false to decide if the singularities' coordinates should be rounded to the nearest integers
     /// @param[in] roundVertices      id of additional vertices that should be snapped to integer coordinates
     /// @param[in] hardFeatures       #H by 2 list of (face_id, local_vertex_id) pairs identifying edges to be snapped to integer coordinates; local_vertex_id is the index of the edge's first vertex within the face (0, 1, or 2)
-    /// @param[in] loops              list of vertex chains; a closed loop repeats the first vertex at the end (e.g. [v_0,...,v_{n-1},v_0]); an open chain does not (e.g. [v_0,...,v_{n-1}]); edges are consecutive pairs in both cases
-    /// @param[in] loop_orthogonal_axis  per-loop initial orthogonal axis in the starting face's UV frame (0 = U, 1 = V). When non-empty, must have the same length as `loops`.
+    /// @param[in] chains              list of vertex chains; a closed loop repeats the first vertex at the end (e.g. [v_0,...,v_{n-1},v_0]); an open chain does not (e.g. [v_0,...,v_{n-1}]); edges are consecutive pairs in both cases
+    /// @param[in] chain_orthogonal_axis  per-loop initial orthogonal axis in the starting face's UV frame (0 = U, 1 = V). When non-empty, must have the same length as `chains`.
     ///
     template <typename DerivedV, typename DerivedF, typename DerivedU>
     IGL_INLINE void miq(
@@ -108,8 +108,8 @@ namespace igl
       bool singularityRound = true,
       const std::vector<int> &roundVertices = std::vector<int>(),
       const std::vector<std::vector<int>> &hardFeatures = std::vector<std::vector<int> >(),
-      const std::vector<std::vector<int>> &loops = std::vector<std::vector<int> >(),
-      const std::vector<int> &loop_orthogonal_axis = std::vector<int>());
+      const std::vector<std::vector<int>> &chains = std::vector<std::vector<int> >(),
+      const std::vector<int> &chain_orthogonal_axis = std::vector<int>());
   };
 };
 };

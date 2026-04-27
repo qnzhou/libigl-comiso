@@ -416,20 +416,20 @@ TEST_CASE("miq: 3_holes_loop_trivial", "[igl/copyleft/comiso]")
   igl::comb_frame_field(V, F, X1, X2, BIS1_combed, BIS2_combed, X1_combed, X2_combed);
 
   // Trivial loop: the three vertices of face 0, walked in order.
-  std::vector<std::vector<int>> loops = { { F(0, 0), F(0, 1), F(0, 2) } };
+  std::vector<std::vector<int>> chains = { { F(0, 0), F(0, 1), F(0, 2) } };
   std::vector<int> axes = { 0 };
 
   igl::copyleft::comiso::miq(V, F, X1_combed, X2_combed, MMatch, isSingularity, Seams,
       UV, FUV, /*gradientSize=*/50, /*stiffness=*/5.0, /*directRound=*/false,
       /*iter=*/0, /*localIter=*/5, /*doRound=*/true, /*singularityRound=*/true,
       std::vector<int>(), std::vector<std::vector<int>>(),
-      loops, axes);
+      chains, axes);
 
   Eigen::MatrixXi TT, TTi;
   igl::triangle_triangle_adjacency(F, TT, TTi);
 
   // Trivial loop telescopes to zero by construction.
-  double s = loopOrthogonalSum(F, TT, TTi, FUV, MMatch, Seams, UV, loops[0], 0);
+  double s = loopOrthogonalSum(F, TT, TTi, FUV, MMatch, Seams, UV, chains[0], 0);
   std::cout << "[loop trivial] orthogonal sum = " << s << std::endl;
   REQUIRE(s < 1e-9);
 }
@@ -487,14 +487,14 @@ TEST_CASE("miq: 3_holes_loop_one_ring", "[igl/copyleft/comiso]")
   std::cout << "[loop 1-ring baseline (no constraint)] orthogonal sum = " << s_base << std::endl;
 
   // Solve again with the loop constraint.
-  std::vector<std::vector<int>> loops = { ring };
+  std::vector<std::vector<int>> chains = { ring };
   std::vector<int> axes = { 1 }; // V-axis as orthogonal
 
   igl::copyleft::comiso::miq(V, F, X1_combed, X2_combed, MMatch, isSingularity, Seams,
       UV, FUV, /*gradientSize=*/50, /*stiffness=*/5.0, /*directRound=*/false,
       /*iter=*/0, /*localIter=*/5, /*doRound=*/true, /*singularityRound=*/true,
       std::vector<int>(), std::vector<std::vector<int>>(),
-      loops, axes);
+      chains, axes);
 
   double s = loopOrthogonalSum(F, TT, TTi, FUV, MMatch, Seams, UV, ring, /*axis=*/1);
   std::cout << "[loop 1-ring center=" << center << " size=" << ring.size()
@@ -555,22 +555,22 @@ TEST_CASE("miq: 3_holes_loop_multi_step_fan", "[igl/copyleft/comiso]")
   REQUIRE(ring.size() >= 5);
 
   // [r_0, u, r_2, r_1] — closes back to r_0 via implicit (r_1, r_0) edge.
-  std::vector<int> loop = { ring[0], u, ring[2], ring[1] };
-  std::vector<std::vector<int>> loops = { loop };
+  std::vector<int> chain = { ring[0], u, ring[2], ring[1] };
+  std::vector<std::vector<int>> chains = { chain };
   std::vector<int> axes = { 0 }; // U-axis as orthogonal
 
   // Baseline (no constraint).
   Eigen::MatrixXd UV_base; Eigen::MatrixXi FUV_base;
   igl::copyleft::comiso::miq(V, F, X1_combed, X2_combed, MMatch, isSingularity, Seams,
       UV_base, FUV_base, 50, 5.0, false, 0, 5, true, true);
-  double s_base = loopOrthogonalSum(F, TT, TTi, FUV_base, MMatch, Seams, UV_base, loop, 0);
+  double s_base = loopOrthogonalSum(F, TT, TTi, FUV_base, MMatch, Seams, UV_base, chain, 0);
 
   // Constrained.
   igl::copyleft::comiso::miq(V, F, X1_combed, X2_combed, MMatch, isSingularity, Seams,
       UV, FUV, 50, 5.0, false, 0, 5, true, true,
       std::vector<int>(), std::vector<std::vector<int>>(),
-      loops, axes);
-  double s = loopOrthogonalSum(F, TT, TTi, FUV, MMatch, Seams, UV, loop, 0);
+      chains, axes);
+  double s = loopOrthogonalSum(F, TT, TTi, FUV, MMatch, Seams, UV, chain, 0);
 
   std::cout << "[loop multi-step u=" << u << " valence=" << VF[u].size()
             << "] baseline=" << s_base << " constrained=" << s << std::endl;
@@ -731,14 +731,14 @@ TEST_CASE("miq: torus_minor_ring_loop_alignment", "[igl/copyleft/comiso]")
   // Constrained: solve with minor-ring loop, axis = 0.
   MatrixXd UV;
   MatrixXi FUV;
-  std::vector<std::vector<int>> loops = { minor_loop };
+  std::vector<std::vector<int>> chains = { minor_loop };
   std::vector<int> axes = { 0 };
   igl::copyleft::comiso::miq(V, F, X1_combed, X2_combed, MMatch, isSingularity, Seams,
       UV, FUV,
       /*gradientSize=*/30, /*stiffness=*/5.0, /*directRound=*/false,
       /*iter=*/0, /*localIter=*/5, /*doRound=*/true, /*singularityRound=*/true,
       std::vector<int>(), std::vector<std::vector<int>>(),
-      loops, axes);
+      chains, axes);
 
   double s = loopOrthogonalSum(F, TT, TTi, FUV, MMatch, Seams, UV, minor_loop, /*axis=*/0);
   std::cout << "[torus minor-ring constrained] orth_sum = " << s << std::endl;
@@ -871,12 +871,12 @@ TEST_CASE("miq: torus_four_minor_ring_loops_alignment", "[igl/copyleft/comiso]")
 
   // Four minor-ring loops at theta_i for i in {0, n_theta/4, n_theta/2, 3*n_theta/4}.
   REQUIRE(n_theta % 4 == 0);
-  const int n_loops = 4;
-  std::vector<std::vector<int>> loops(n_loops);
-  std::vector<int> axes(n_loops, 0);
-  for (int k = 0; k < n_loops; ++k) {
-    int i = (n_theta / n_loops) * k;
-    for (int j = 0; j < n_phi; ++j) loops[k].push_back(i * n_phi + j);
+  const int n_chains = 4;
+  std::vector<std::vector<int>> chains(n_chains);
+  std::vector<int> axes(n_chains, 0);
+  for (int k = 0; k < n_chains; ++k) {
+    int i = (n_theta / n_chains) * k;
+    for (int j = 0; j < n_phi; ++j) chains[k].push_back(i * n_phi + j);
   }
 
   // Probe: try also a major-ring loop (different homology class on the torus).
@@ -929,34 +929,34 @@ TEST_CASE("miq: torus_four_minor_ring_loops_alignment", "[igl/copyleft/comiso]")
       /*gradientSize=*/30, /*stiffness=*/5.0, /*directRound=*/false,
       /*iter=*/0, /*localIter=*/5, /*doRound=*/true, /*singularityRound=*/true,
       std::vector<int>(), std::vector<std::vector<int>>(),
-      loops, axes);
+      chains, axes);
 
-  // (1) All four loop constraints must be enforced.
+  // (1) All four chain constraints must be enforced.
   double max_orth_sum = 0.0;
-  for (int k = 0; k < n_loops; ++k) {
-    double sk = loopOrthogonalSum(F, TT, TTi, FUV, MMatch, Seams, UV, loops[k], /*axis=*/0);
-    std::cout << "[torus 4-loops] loop " << k << " orth_sum = " << sk << std::endl;
+  for (int k = 0; k < n_chains; ++k) {
+    double sk = loopOrthogonalSum(F, TT, TTi, FUV, MMatch, Seams, UV, chains[k], /*axis=*/0);
+    std::cout << "[torus 4-chains] chain " << k << " orth_sum = " << sk << std::endl;
     max_orth_sum = std::max(max_orth_sum, std::abs(sk));
   }
   REQUIRE(max_orth_sum < 1e-4);
 
   double max_misalign = 0, avg_misalign = 0; int faces_checked = 0;
   compute_alignment(UV, FUV, max_misalign, avg_misalign, faces_checked);
-  std::cout << "[torus 4-loops alignment] faces=" << faces_checked
+  std::cout << "[torus 4-chains alignment] faces=" << faces_checked
             << " max_misalign=" << max_misalign
             << " avg_misalign=" << avg_misalign << std::endl;
 
-  // Probe A: 4 minor + 1 major-ring (homologically independent loop). Should
+  // Probe A: 4 minor + 1 major-ring (homologically independent chain). Should
   // perturb the solution measurably.
-  std::vector<std::vector<int>> mixed_loops = loops;
-  mixed_loops.push_back(probe_loop_major);
-  std::vector<int> mixed_axes(mixed_loops.size(), 0);
+  std::vector<std::vector<int>> mixed_chains = chains;
+  mixed_chains.push_back(probe_loop_major);
+  std::vector<int> mixed_axes(mixed_chains.size(), 0);
   Eigen::MatrixXd UV_mix; Eigen::MatrixXi FUV_mix;
   igl::copyleft::comiso::miq(V, F, X1_combed, X2_combed, MMatch, isSingularity, Seams,
       UV_mix, FUV_mix,
       30, 5.0, false, 0, 5, true, true,
       std::vector<int>(), std::vector<std::vector<int>>(),
-      mixed_loops, mixed_axes);
+      mixed_chains, mixed_axes);
   double mix_max = 0, mix_avg = 0; int mix_n = 0;
   compute_alignment(UV_mix, FUV_mix, mix_max, mix_avg, mix_n);
   std::cout << "[torus 4-minor + 1-major-ring]   max_misalign=" << mix_max
@@ -964,18 +964,18 @@ TEST_CASE("miq: torus_four_minor_ring_loops_alignment", "[igl/copyleft/comiso]")
 
   // Probe B: 4 minor rings with BOTH axes constrained (8 constraints,
   // pins the full 2D holonomy of each ring to zero).
-  std::vector<std::vector<int>> dual_loops;
+  std::vector<std::vector<int>> dual_chains;
   std::vector<int> dual_axes;
-  for (int k = 0; k < n_loops; ++k) {
-    dual_loops.push_back(loops[k]); dual_axes.push_back(0);
-    dual_loops.push_back(loops[k]); dual_axes.push_back(1);
+  for (int k = 0; k < n_chains; ++k) {
+    dual_chains.push_back(chains[k]); dual_axes.push_back(0);
+    dual_chains.push_back(chains[k]); dual_axes.push_back(1);
   }
   Eigen::MatrixXd UV_dual; Eigen::MatrixXi FUV_dual;
   igl::copyleft::comiso::miq(V, F, X1_combed, X2_combed, MMatch, isSingularity, Seams,
       UV_dual, FUV_dual,
       30, 5.0, false, 0, 5, true, true,
       std::vector<int>(), std::vector<std::vector<int>>(),
-      dual_loops, dual_axes);
+      dual_chains, dual_axes);
   double dual_max = 0, dual_avg = 0; int dual_n = 0;
   compute_alignment(UV_dual, FUV_dual, dual_max, dual_avg, dual_n);
   std::cout << "[torus 4-minor-rings x 2-axes]   max_misalign=" << dual_max
