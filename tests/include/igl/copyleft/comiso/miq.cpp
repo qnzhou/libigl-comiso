@@ -256,10 +256,10 @@ TEST_CASE("miq: 3_holes_quantization", "[igl/copyleft/comiso]")
     singular_checked++;
   }
 
-  std::cout << "[miq quantization] seam edges checked: " << seam_edges_checked
-            << ", max int-translation error: " << max_seam_int_err << std::endl;
-  std::cout << "[miq quantization] singular vertices checked: " << singular_checked
-            << ", max integer-coord error: " << max_singularity_int_err << std::endl;
+  INFO("[miq quantization] seam edges checked: " << seam_edges_checked
+       << ", max int-translation error: " << max_seam_int_err);
+  INFO("[miq quantization] singular vertices checked: " << singular_checked
+       << ", max integer-coord error: " << max_singularity_int_err);
 
   // Loose tolerance — solver is iterative.
   REQUIRE(max_seam_int_err < 1e-4);
@@ -431,7 +431,7 @@ TEST_CASE("miq: 3_holes_loop_trivial", "[igl/copyleft/comiso]")
 
   // Trivial loop telescopes to zero by construction.
   double s = loopOrthogonalSum(F, TT, TTi, FUV, MMatch, Seams, UV, chains[0], 0);
-  std::cout << "[loop trivial] orthogonal sum = " << s << std::endl;
+  INFO("[loop trivial] orthogonal sum = " << s);
   REQUIRE(s < 1e-9);
 }
 
@@ -486,7 +486,7 @@ TEST_CASE("miq: 3_holes_loop_one_ring", "[igl/copyleft/comiso]")
       UV_base, FUV_base, /*gradientSize=*/50, /*stiffness=*/5.0, /*directRound=*/false,
       /*iter=*/0, /*localIter=*/5, /*doRound=*/true, /*singularityRound=*/true);
   double s_base = loopOrthogonalSum(F, TT, TTi, FUV_base, MMatch, Seams, UV_base, ring, /*axis=*/1);
-  std::cout << "[loop 1-ring baseline (no constraint)] orthogonal sum = " << s_base << std::endl;
+  INFO("[loop 1-ring baseline (no constraint)] orthogonal sum = " << s_base);
 
   // Solve again with the loop constraint.
   std::vector<std::vector<int>> chains = { ring };
@@ -499,8 +499,8 @@ TEST_CASE("miq: 3_holes_loop_one_ring", "[igl/copyleft/comiso]")
       chains, axes);
 
   double s = loopOrthogonalSum(F, TT, TTi, FUV, MMatch, Seams, UV, ring, /*axis=*/1);
-  std::cout << "[loop 1-ring center=" << center << " size=" << ring.size()
-            << "] orthogonal sum (constrained) = " << s << std::endl;
+  INFO("[loop 1-ring center=" << center << " size=" << ring.size()
+     << "] orthogonal sum (constrained) = " << s);
   REQUIRE(s < 1e-4);
   // The constraint must actually constrain: with a 1-ring around a singular
   // vertex, the natural solution does not satisfy the constraint, so the
@@ -574,8 +574,8 @@ TEST_CASE("miq: 3_holes_loop_multi_step_fan", "[igl/copyleft/comiso]")
       chains, axes);
   double s = loopOrthogonalSum(F, TT, TTi, FUV, MMatch, Seams, UV, chain, 0);
 
-  std::cout << "[loop multi-step u=" << u << " valence=" << VF[u].size()
-            << "] baseline=" << s_base << " constrained=" << s << std::endl;
+  INFO("[loop multi-step u=" << u << " valence=" << VF[u].size()
+     << "] baseline=" << s_base << " constrained=" << s);
 
   REQUIRE(s < 1e-4);
 }
@@ -727,9 +727,9 @@ TEST_CASE("miq: torus_minor_ring_loop_alignment", "[igl/copyleft/comiso]")
   double base_max = 0, base_avg = 0; int base_n = 0;
   compute_alignment(UV_base, FUV_base, base_max, base_avg, base_n);
   double base_orth = loopOrthogonalSum(F, TT, TTi, FUV_base, MMatch, Seams, UV_base, minor_loop, /*axis=*/0);
-  std::cout << "[torus minor-ring baseline] faces=" << base_n
-            << " max_misalign=" << base_max << " avg_misalign=" << base_avg
-            << " orth_sum=" << base_orth << std::endl;
+  INFO("[torus minor-ring baseline] faces=" << base_n
+     << " max_misalign=" << base_max << " avg_misalign=" << base_avg
+     << " orth_sum=" << base_orth);
 
   // Constrained: solve with minor-ring loop, axis = 0.
   MatrixXd UV;
@@ -744,13 +744,13 @@ TEST_CASE("miq: torus_minor_ring_loop_alignment", "[igl/copyleft/comiso]")
       chains, axes);
 
   double s = loopOrthogonalSum(F, TT, TTi, FUV, MMatch, Seams, UV, minor_loop, /*axis=*/0);
-  std::cout << "[torus minor-ring constrained] orth_sum = " << s << std::endl;
+  INFO("[torus minor-ring constrained] orth_sum = " << s);
 
   double max_misalign = 0, avg_misalign = 0; int faces_checked = 0;
   compute_alignment(UV, FUV, max_misalign, avg_misalign, faces_checked);
-  std::cout << "[torus minor-ring alignment] faces=" << faces_checked
-            << " max_misalign=" << max_misalign
-            << " avg_misalign=" << avg_misalign << std::endl;
+  INFO("[torus minor-ring alignment] faces=" << faces_checked
+     << " max_misalign=" << max_misalign
+     << " avg_misalign=" << avg_misalign);
 
   // (1) Loop constraint is enforced.
   REQUIRE(s < 1e-4);
@@ -940,16 +940,16 @@ TEST_CASE("miq: torus_four_minor_ring_loops_alignment", "[igl/copyleft/comiso]")
   double max_orth_sum = 0.0;
   for (int k = 0; k < n_chains; ++k) {
     double sk = loopOrthogonalSum(F, TT, TTi, FUV, MMatch, Seams, UV, chains[k], /*axis=*/0);
-    std::cout << "[torus 4-chains] chain " << k << " orth_sum = " << sk << std::endl;
+    INFO("[torus 4-chains] chain " << k << " orth_sum = " << sk);
     max_orth_sum = std::max(max_orth_sum, std::abs(sk));
   }
   REQUIRE(max_orth_sum < 1e-4);
 
   double max_misalign = 0, avg_misalign = 0; int faces_checked = 0;
   compute_alignment(UV, FUV, max_misalign, avg_misalign, faces_checked);
-  std::cout << "[torus 4-chains alignment] faces=" << faces_checked
-            << " max_misalign=" << max_misalign
-            << " avg_misalign=" << avg_misalign << std::endl;
+  INFO("[torus 4-chains alignment] faces=" << faces_checked
+     << " max_misalign=" << max_misalign
+     << " avg_misalign=" << avg_misalign);
 
   // Probe A: 4 minor + 1 major-ring (homologically independent chain). Should
   // perturb the solution measurably.
@@ -964,8 +964,8 @@ TEST_CASE("miq: torus_four_minor_ring_loops_alignment", "[igl/copyleft/comiso]")
       mixed_chains, mixed_axes);
   double mix_max = 0, mix_avg = 0; int mix_n = 0;
   compute_alignment(UV_mix, FUV_mix, mix_max, mix_avg, mix_n);
-  std::cout << "[torus 4-minor + 1-major-ring]   max_misalign=" << mix_max
-            << " avg_misalign=" << mix_avg << std::endl;
+  INFO("[torus 4-minor + 1-major-ring]   max_misalign=" << mix_max
+     << " avg_misalign=" << mix_avg);
 
   // Probe B: 4 minor rings with BOTH axes constrained (8 constraints,
   // pins the full 2D holonomy of each ring to zero).
@@ -983,8 +983,8 @@ TEST_CASE("miq: torus_four_minor_ring_loops_alignment", "[igl/copyleft/comiso]")
       dual_chains, dual_axes);
   double dual_max = 0, dual_avg = 0; int dual_n = 0;
   compute_alignment(UV_dual, FUV_dual, dual_max, dual_avg, dual_n);
-  std::cout << "[torus 4-minor-rings x 2-axes]   max_misalign=" << dual_max
-            << " avg_misalign=" << dual_avg << std::endl;
+  INFO("[torus 4-minor-rings x 2-axes]   max_misalign=" << dual_max
+     << " avg_misalign=" << dual_avg);
 
   // The 4-minor-only configuration must produce the same UV (and therefore
   // the same alignment metrics) as a single minor-ring constraint. The
