@@ -44,6 +44,7 @@
 #include <igl/matlab_format.h>
 #include <igl/Timer.h>
 
+#include <cstdio>
 #include <stdexcept>
 
 #define DEBUGPRINT 0

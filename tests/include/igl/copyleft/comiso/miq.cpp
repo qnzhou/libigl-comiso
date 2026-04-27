@@ -601,9 +601,9 @@ TEST_CASE("miq: torus_minor_ring_loop_alignment", "[igl/copyleft/comiso]")
   const int n_v = n_theta * n_phi;
   MatrixXd V(n_v, 3);
   for (int i = 0; i < n_theta; ++i) {
-    double th = 2 * M_PI * i / n_theta;
+    double th = 2 * igl::PI * i / n_theta;
     for (int j = 0; j < n_phi; ++j) {
-      double ph = 2 * M_PI * j / n_phi;
+      double ph = 2 * igl::PI * j / n_phi;
       V(i * n_phi + j, 0) = (R + r_minor * std::cos(ph)) * std::cos(th);
       V(i * n_phi + j, 1) = (R + r_minor * std::cos(ph)) * std::sin(th);
       V(i * n_phi + j, 2) = r_minor * std::sin(ph);
@@ -646,7 +646,7 @@ TEST_CASE("miq: torus_minor_ring_loop_alignment", "[igl/copyleft/comiso]")
   // === PD1 = minor_tangent(centroid) rotated 30 degrees around face normal; PD2 = n x PD1 ===
   MatrixXd PD1(F.rows(), 3);
   MatrixXd PD2(F.rows(), 3);
-  const double rot_angle = M_PI / 6;
+  const double rot_angle = igl::PI / 6;
   for (int f = 0; f < F.rows(); ++f) {
     Vector3d p0 = V.row(F(f, 0));
     Vector3d p1 = V.row(F(f, 1));
@@ -798,9 +798,9 @@ TEST_CASE("miq: torus_four_minor_ring_loops_alignment", "[igl/copyleft/comiso]")
   const int n_v = n_theta * n_phi;
   MatrixXd V(n_v, 3);
   for (int i = 0; i < n_theta; ++i) {
-    double th = 2 * M_PI * i / n_theta;
+    double th = 2 * igl::PI * i / n_theta;
     for (int j = 0; j < n_phi; ++j) {
-      double ph = 2 * M_PI * j / n_phi;
+      double ph = 2 * igl::PI * j / n_phi;
       V(i * n_phi + j, 0) = (R + r_minor * std::cos(ph)) * std::cos(th);
       V(i * n_phi + j, 1) = (R + r_minor * std::cos(ph)) * std::sin(th);
       V(i * n_phi + j, 2) = r_minor * std::sin(ph);
@@ -838,7 +838,7 @@ TEST_CASE("miq: torus_four_minor_ring_loops_alignment", "[igl/copyleft/comiso]")
 
   MatrixXd PD1(F.rows(), 3);
   MatrixXd PD2(F.rows(), 3);
-  const double rot_angle = M_PI / 6;
+  const double rot_angle = igl::PI / 6;
   for (int f = 0; f < F.rows(); ++f) {
     Vector3d p0 = V.row(F(f, 0));
     Vector3d p1 = V.row(F(f, 1));
