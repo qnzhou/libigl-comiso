@@ -39,6 +39,8 @@ namespace igl
     /// @param[in] singularityRound  set true/false to decide if the singularities' coordinates should be rounded to the nearest integers
     /// @param[in] roundVertices     id of additional vertices that should be snapped to integer coordinates
     /// @param[in] hardFeatures      #H by 2 list of pairs of vertices that belongs to edges that should be snapped to integer coordinates
+    /// @param[in] loops             list of closed vertex loops; each loop is a sequence [v_0, v_1, ..., v_{n-1}] with the implicit closing edge from v_{n-1} back to v_0
+    /// @param[in] loop_orthogonal_axis  per-loop initial orthogonal axis in the starting face's UV frame (0 = U, 1 = V). When non-empty, must have the same length as `loops`. Adds one hard linear constraint per loop forcing the parallel-transported orthogonal component of the accumulated UV displacement around the loop to zero.
     /// @param[out] UV                 #UV by 2 list of vertices in 2D
     /// @param[out] FUV                #FUV by 3 list of face indices in UV
     ///
@@ -58,7 +60,9 @@ namespace igl
       bool doRound = true,
       bool singularityRound = true,
       const std::vector<int> &roundVertices = std::vector<int>(),
-      const std::vector<std::vector<int>> &hardFeatures = std::vector<std::vector<int> >());
+      const std::vector<std::vector<int>> &hardFeatures = std::vector<std::vector<int> >(),
+      const std::vector<std::vector<int>> &loops = std::vector<std::vector<int> >(),
+      const std::vector<int> &loop_orthogonal_axis = std::vector<int>());
 
     /// miq Helper function that allows to directly provided pre-combed bisectors for an already cut mesh
     ///
@@ -81,6 +85,8 @@ namespace igl
     /// @param[in] singularityRound   set true/false to decide if the singularities' coordinates should be rounded to the nearest integers
     /// @param[in] roundVertices      id of additional vertices that should be snapped to integer coordinates
     /// @param[in] hardFeatures       #H by 2 list of pairs of vertices that belongs to edges that should be snapped to integer coordinates
+    /// @param[in] loops              list of closed vertex loops; each loop is a sequence [v_0, v_1, ..., v_{n-1}] with the implicit closing edge from v_{n-1} back to v_0
+    /// @param[in] loop_orthogonal_axis  per-loop initial orthogonal axis in the starting face's UV frame (0 = U, 1 = V). When non-empty, must have the same length as `loops`.
     ///
     template <typename DerivedV, typename DerivedF, typename DerivedU>
     IGL_INLINE void miq(
@@ -101,7 +107,9 @@ namespace igl
       bool doRound = true,
       bool singularityRound = true,
       const std::vector<int> &roundVertices = std::vector<int>(),
-      const std::vector<std::vector<int>> &hardFeatures = std::vector<std::vector<int> >());
+      const std::vector<std::vector<int>> &hardFeatures = std::vector<std::vector<int> >(),
+      const std::vector<std::vector<int>> &loops = std::vector<std::vector<int> >(),
+      const std::vector<int> &loop_orthogonal_axis = std::vector<int>());
   };
 };
 };
