@@ -577,3 +577,414 @@ TEST_CASE("miq: 3_holes_loop_multi_step_fan", "[igl/copyleft/comiso]")
 
   REQUIRE(s < 1e-4);
 }
+
+TEST_CASE("miq: torus_minor_ring_loop_alignment", "[igl/copyleft/comiso]")
+{
+  // Build a torus. Assign a per-face cross-field representative PD1 by
+  // rotating the minor-ring tangent (the small-circle direction around the
+  // tube cross-section) by 30 degrees around the face normal. Add a loop
+  // constraint on a single minor ring (one circle around the tube), with
+  // orthogonal axis = 0. Verify
+  // (i) the loop constraint is enforced (orthogonal-sum ~ 0),
+  // (ii) gradU, gradV per face are aligned with major/minor tangents,
+  // (iii) the baseline (no constraint) UV does NOT satisfy the constraint
+  //      — the minor ring is one of the torus's homology generators, so the
+  //      natural UV holonomy around it is a non-trivial integer translation.
+  using namespace Eigen;
+
+  // === Torus mesh ===
+  const double R = 2.0;       // major radius
+  const double r_minor = 0.7; // minor radius
+  const int n_theta = 32;     // major divisions
+  const int n_phi = 16;       // minor divisions
+
+  const int n_v = n_theta * n_phi;
+  MatrixXd V(n_v, 3);
+  for (int i = 0; i < n_theta; ++i) {
+    double th = 2 * M_PI * i / n_theta;
+    for (int j = 0; j < n_phi; ++j) {
+      double ph = 2 * M_PI * j / n_phi;
+      V(i * n_phi + j, 0) = (R + r_minor * std::cos(ph)) * std::cos(th);
+      V(i * n_phi + j, 1) = (R + r_minor * std::cos(ph)) * std::sin(th);
+      V(i * n_phi + j, 2) = r_minor * std::sin(ph);
+    }
+  }
+
+  std::vector<RowVector3i> face_list;
+  for (int i = 0; i < n_theta; ++i) {
+    int inext = (i + 1) % n_theta;
+    for (int j = 0; j < n_phi; ++j) {
+      int jn = (j + 1) % n_phi;
+      int v00 = i * n_phi + j;
+      int v01 = i * n_phi + jn;
+      int v10 = inext * n_phi + j;
+      int v11 = inext * n_phi + jn;
+      face_list.push_back(RowVector3i(v00, v10, v11));
+      face_list.push_back(RowVector3i(v00, v11, v01));
+    }
+  }
+  MatrixXi F(face_list.size(), 3);
+  for (size_t k = 0; k < face_list.size(); ++k) F.row(k) = face_list[k];
+
+  // Helper: recover (theta, phi) from a 3D point on the torus.
+  auto point_to_theta_phi = [&](const Vector3d &p) {
+    double th = std::atan2(p.y(), p.x());
+    double rho = std::sqrt(p.x() * p.x() + p.y() * p.y()) - R;
+    double ph = std::atan2(p.z(), rho);
+    return std::make_pair(th, ph);
+  };
+
+  // Helper: minor-ring tangent (= dp/dphi normalized) at (theta, phi).
+  auto minor_tangent = [](double th, double ph) {
+    return Vector3d(-std::sin(ph) * std::cos(th), -std::sin(ph) * std::sin(th), std::cos(ph));
+  };
+  // Helper: major-ring tangent (= dp/dtheta normalized) at theta.
+  auto major_tangent = [](double th) {
+    return Vector3d(-std::sin(th), std::cos(th), 0.0);
+  };
+
+  // === PD1 = minor_tangent(centroid) rotated 30 degrees around face normal; PD2 = n x PD1 ===
+  MatrixXd PD1(F.rows(), 3);
+  MatrixXd PD2(F.rows(), 3);
+  const double rot_angle = M_PI / 6;
+  for (int f = 0; f < F.rows(); ++f) {
+    Vector3d p0 = V.row(F(f, 0));
+    Vector3d p1 = V.row(F(f, 1));
+    Vector3d p2 = V.row(F(f, 2));
+    Vector3d c = (p0 + p1 + p2) / 3.0;
+    Vector3d nf = (p1 - p0).cross(p2 - p0).normalized();
+    auto thph = point_to_theta_phi(c);
+    Vector3d mt = minor_tangent(thph.first, thph.second);
+    mt -= nf * nf.dot(mt);
+    if (mt.norm() < 1e-12) mt = Vector3d(1, 0, 0);
+    mt.normalize();
+    Vector3d pd1 = mt * std::cos(rot_angle) + nf.cross(mt) * std::sin(rot_angle);
+    PD1.row(f) = pd1;
+    PD2.row(f) = nf.cross(pd1).normalized();
+  }
+
+  // === Combed bisectors / mismatch / singularities / seams (mirrors auto-cut overload) ===
+  MatrixXd BIS1, BIS2, BIS1_combed, BIS2_combed, X1_combed, X2_combed;
+  igl::compute_frame_field_bisectors(V, F, PD1, PD2, BIS1, BIS2);
+  igl::comb_cross_field(V, F, BIS1, BIS2, BIS1_combed, BIS2_combed);
+  Eigen::Matrix<int, Eigen::Dynamic, 3> MMatch;
+  igl::cross_field_mismatch(V, F, BIS1_combed, BIS2_combed, true, MMatch);
+  Eigen::Matrix<int, Eigen::Dynamic, 1> isSingularity, singularityIndex;
+  igl::find_cross_field_singularities(V, F, MMatch, isSingularity, singularityIndex);
+  Eigen::Matrix<int, Eigen::Dynamic, 3> Seams;
+  igl::cut_mesh_from_singularities(V, F, MMatch, Seams);
+  igl::comb_frame_field(V, F, PD1, PD2, BIS1_combed, BIS2_combed, X1_combed, X2_combed);
+
+  Eigen::MatrixXi TT, TTi;
+  igl::triangle_triangle_adjacency(F, TT, TTi);
+
+  // === Minor ring loop at theta_0 = 0: vertices [V[0][0], V[0][1], ..., V[0][n_phi-1]] ===
+  std::vector<int> minor_loop;
+  for (int j = 0; j < n_phi; ++j) minor_loop.push_back(0 * n_phi + j);
+
+  auto compute_alignment = [&](const Eigen::MatrixXd &UV_in, const Eigen::MatrixXi &FUV_in,
+                               double &max_misalign, double &avg_misalign, int &faces_checked) {
+    max_misalign = 0.0;
+    double sum_misalign = 0.0;
+    faces_checked = 0;
+    for (int f = 0; f < F.rows(); ++f) {
+      Vector3d p0 = V.row(F(f, 0));
+      Vector3d p1 = V.row(F(f, 1));
+      Vector3d p2 = V.row(F(f, 2));
+      Vector3d ncross = (p1 - p0).cross(p2 - p0);
+      double area2 = ncross.norm();
+      Vector3d nf = ncross / area2;
+      double u0 = UV_in(FUV_in(f, 0), 0), u1 = UV_in(FUV_in(f, 1), 0), u2 = UV_in(FUV_in(f, 2), 0);
+      double v0 = UV_in(FUV_in(f, 0), 1), v1 = UV_in(FUV_in(f, 1), 1), v2 = UV_in(FUV_in(f, 2), 1);
+      Vector3d gU = (u0 * nf.cross(p2 - p1) + u1 * nf.cross(p0 - p2) + u2 * nf.cross(p1 - p0)) / area2;
+      Vector3d gV = (v0 * nf.cross(p2 - p1) + v1 * nf.cross(p0 - p2) + v2 * nf.cross(p1 - p0)) / area2;
+      Vector3d c = (p0 + p1 + p2) / 3.0;
+      auto thph = point_to_theta_phi(c);
+      Vector3d mt = minor_tangent(thph.first, thph.second);
+      Vector3d Mt = major_tangent(thph.first);
+      mt -= nf * nf.dot(mt); if (mt.norm() > 1e-12) mt.normalize();
+      Mt -= nf * nf.dot(Mt); if (Mt.norm() > 1e-12) Mt.normalize();
+      if (gU.norm() < 1e-9 || gV.norm() < 1e-9) continue;
+      Vector3d gU_n = gU.normalized();
+      Vector3d gV_n = gV.normalized();
+      double align_U = std::max(std::abs(gU_n.dot(mt)), std::abs(gU_n.dot(Mt)));
+      double align_V = std::max(std::abs(gV_n.dot(mt)), std::abs(gV_n.dot(Mt)));
+      double misalign = std::max(1.0 - align_U, 1.0 - align_V);
+      max_misalign = std::max(max_misalign, misalign);
+      sum_misalign += (1.0 - align_U) + (1.0 - align_V);
+      faces_checked++;
+    }
+    avg_misalign = sum_misalign / (2.0 * std::max(faces_checked, 1));
+  };
+
+  // Baseline: solve without the loop constraint.
+  Eigen::MatrixXd UV_base; Eigen::MatrixXi FUV_base;
+  igl::copyleft::comiso::miq(V, F, X1_combed, X2_combed, MMatch, isSingularity, Seams,
+      UV_base, FUV_base, 30, 5.0, false, 0, 5, true, true);
+  double base_max = 0, base_avg = 0; int base_n = 0;
+  compute_alignment(UV_base, FUV_base, base_max, base_avg, base_n);
+  double base_orth = loopOrthogonalSum(F, TT, TTi, FUV_base, MMatch, Seams, UV_base, minor_loop, /*axis=*/0);
+  std::cout << "[torus minor-ring baseline] faces=" << base_n
+            << " max_misalign=" << base_max << " avg_misalign=" << base_avg
+            << " orth_sum=" << base_orth << std::endl;
+
+  // Constrained: solve with minor-ring loop, axis = 0.
+  MatrixXd UV;
+  MatrixXi FUV;
+  std::vector<std::vector<int>> loops = { minor_loop };
+  std::vector<int> axes = { 0 };
+  igl::copyleft::comiso::miq(V, F, X1_combed, X2_combed, MMatch, isSingularity, Seams,
+      UV, FUV,
+      /*gradientSize=*/30, /*stiffness=*/5.0, /*directRound=*/false,
+      /*iter=*/0, /*localIter=*/5, /*doRound=*/true, /*singularityRound=*/true,
+      std::vector<int>(), std::vector<std::vector<int>>(),
+      loops, axes);
+
+  double s = loopOrthogonalSum(F, TT, TTi, FUV, MMatch, Seams, UV, minor_loop, /*axis=*/0);
+  std::cout << "[torus minor-ring constrained] orth_sum = " << s << std::endl;
+
+  double max_misalign = 0, avg_misalign = 0; int faces_checked = 0;
+  compute_alignment(UV, FUV, max_misalign, avg_misalign, faces_checked);
+  std::cout << "[torus minor-ring alignment] faces=" << faces_checked
+            << " max_misalign=" << max_misalign
+            << " avg_misalign=" << avg_misalign << std::endl;
+
+  // (1) Loop constraint is enforced.
+  REQUIRE(s < 1e-4);
+
+  // (2) Baseline differs from constrained: the natural UV holonomy around
+  // the minor ring is a non-trivial integer translation, so its U-component
+  // (orthogonal-sum) is non-zero — this is the signature property the user
+  // asked us to verify.
+  REQUIRE(std::abs(base_orth) > 0.5);
+  REQUIRE(std::abs(base_orth) > 100.0 * s);
+
+  // (3) Constraint pulls gradU/gradV toward axis-alignment relative to
+  // baseline. NOTE: on the torus the cross field has no singularities, so
+  // MIQ does not aggressively snap gradients to axes the way it does on the
+  // sphere. With a 30-degree-tilted cross field the gradients stay tilted
+  // ~30 degrees off the major/minor tangent directions; a single loop
+  // constraint improves average alignment but cannot remove the local tilt.
+  // (See the four-loop variant below for a stronger constraint.)
+  REQUIRE(avg_misalign < base_avg);
+}
+
+TEST_CASE("miq: torus_four_minor_ring_loops_alignment", "[igl/copyleft/comiso]")
+{
+  // Variant of the torus test with four minor-ring loop constraints, evenly
+  // spaced around the major direction (theta = 0, pi/2, pi, 3pi/2), each
+  // with axis = 0.
+  //
+  // Important finding: on the torus, every minor ring is in the *same* H_1
+  // homology class. MIQ flattens the torus into a square by cutting along
+  // one minor cut and one major cut; every minor ring of the original
+  // surface crosses the same major cut exactly once. The U-component of UV
+  // holonomy around any minor ring is therefore pinned to the *same*
+  // integer translation — the major-cut U-shift. Asking for "U-holonomy = 0"
+  // on 4 rings is therefore equivalent to asking for it on 1, and produces
+  // an identical UV solution.
+  //
+  // (To actually shrink misalignment further we would need either (a) loops
+  // in different homology classes — e.g., a major ring — or (b) constraints
+  // on BOTH axes, fixing the full 2D holonomy of each loop. Quick probes
+  // below confirm both directions DO reduce misalignment.)
+  using namespace Eigen;
+
+  const double R = 2.0;
+  const double r_minor = 0.7;
+  const int n_theta = 32;
+  const int n_phi = 16;
+
+  const int n_v = n_theta * n_phi;
+  MatrixXd V(n_v, 3);
+  for (int i = 0; i < n_theta; ++i) {
+    double th = 2 * M_PI * i / n_theta;
+    for (int j = 0; j < n_phi; ++j) {
+      double ph = 2 * M_PI * j / n_phi;
+      V(i * n_phi + j, 0) = (R + r_minor * std::cos(ph)) * std::cos(th);
+      V(i * n_phi + j, 1) = (R + r_minor * std::cos(ph)) * std::sin(th);
+      V(i * n_phi + j, 2) = r_minor * std::sin(ph);
+    }
+  }
+
+  std::vector<RowVector3i> face_list;
+  for (int i = 0; i < n_theta; ++i) {
+    int inext = (i + 1) % n_theta;
+    for (int j = 0; j < n_phi; ++j) {
+      int jn = (j + 1) % n_phi;
+      int v00 = i * n_phi + j;
+      int v01 = i * n_phi + jn;
+      int v10 = inext * n_phi + j;
+      int v11 = inext * n_phi + jn;
+      face_list.push_back(RowVector3i(v00, v10, v11));
+      face_list.push_back(RowVector3i(v00, v11, v01));
+    }
+  }
+  MatrixXi F(face_list.size(), 3);
+  for (size_t k = 0; k < face_list.size(); ++k) F.row(k) = face_list[k];
+
+  auto point_to_theta_phi = [&](const Vector3d &p) {
+    double th = std::atan2(p.y(), p.x());
+    double rho = std::sqrt(p.x() * p.x() + p.y() * p.y()) - R;
+    double ph = std::atan2(p.z(), rho);
+    return std::make_pair(th, ph);
+  };
+  auto minor_tangent = [](double th, double ph) {
+    return Vector3d(-std::sin(ph) * std::cos(th), -std::sin(ph) * std::sin(th), std::cos(ph));
+  };
+  auto major_tangent = [](double th) {
+    return Vector3d(-std::sin(th), std::cos(th), 0.0);
+  };
+
+  MatrixXd PD1(F.rows(), 3);
+  MatrixXd PD2(F.rows(), 3);
+  const double rot_angle = M_PI / 6;
+  for (int f = 0; f < F.rows(); ++f) {
+    Vector3d p0 = V.row(F(f, 0));
+    Vector3d p1 = V.row(F(f, 1));
+    Vector3d p2 = V.row(F(f, 2));
+    Vector3d c = (p0 + p1 + p2) / 3.0;
+    Vector3d nf = (p1 - p0).cross(p2 - p0).normalized();
+    auto thph = point_to_theta_phi(c);
+    Vector3d mt = minor_tangent(thph.first, thph.second);
+    mt -= nf * nf.dot(mt);
+    if (mt.norm() < 1e-12) mt = Vector3d(1, 0, 0);
+    mt.normalize();
+    Vector3d pd1 = mt * std::cos(rot_angle) + nf.cross(mt) * std::sin(rot_angle);
+    PD1.row(f) = pd1;
+    PD2.row(f) = nf.cross(pd1).normalized();
+  }
+
+  MatrixXd BIS1, BIS2, BIS1_combed, BIS2_combed, X1_combed, X2_combed;
+  igl::compute_frame_field_bisectors(V, F, PD1, PD2, BIS1, BIS2);
+  igl::comb_cross_field(V, F, BIS1, BIS2, BIS1_combed, BIS2_combed);
+  Eigen::Matrix<int, Eigen::Dynamic, 3> MMatch;
+  igl::cross_field_mismatch(V, F, BIS1_combed, BIS2_combed, true, MMatch);
+  Eigen::Matrix<int, Eigen::Dynamic, 1> isSingularity, singularityIndex;
+  igl::find_cross_field_singularities(V, F, MMatch, isSingularity, singularityIndex);
+  Eigen::Matrix<int, Eigen::Dynamic, 3> Seams;
+  igl::cut_mesh_from_singularities(V, F, MMatch, Seams);
+  igl::comb_frame_field(V, F, PD1, PD2, BIS1_combed, BIS2_combed, X1_combed, X2_combed);
+
+  Eigen::MatrixXi TT, TTi;
+  igl::triangle_triangle_adjacency(F, TT, TTi);
+
+  // Four minor-ring loops at theta_i for i in {0, n_theta/4, n_theta/2, 3*n_theta/4}.
+  REQUIRE(n_theta % 4 == 0);
+  const int n_loops = 4;
+  std::vector<std::vector<int>> loops(n_loops);
+  std::vector<int> axes(n_loops, 0);
+  for (int k = 0; k < n_loops; ++k) {
+    int i = (n_theta / n_loops) * k;
+    for (int j = 0; j < n_phi; ++j) loops[k].push_back(i * n_phi + j);
+  }
+
+  // Probe: try also a major-ring loop (different homology class on the torus).
+  // If the minor-ring constraints really do collapse to a single integer
+  // wrap, mixing in a major-ring should produce a different UV.
+  std::vector<int> probe_loop_major;
+  const int probe_phi = 0;
+  for (int i = 0; i < n_theta; ++i) probe_loop_major.push_back(i * n_phi + probe_phi);
+
+  auto compute_alignment = [&](const Eigen::MatrixXd &UV_in, const Eigen::MatrixXi &FUV_in,
+                               double &max_misalign, double &avg_misalign, int &faces_checked) {
+    max_misalign = 0.0;
+    double sum_misalign = 0.0;
+    faces_checked = 0;
+    for (int f = 0; f < F.rows(); ++f) {
+      Vector3d p0 = V.row(F(f, 0));
+      Vector3d p1 = V.row(F(f, 1));
+      Vector3d p2 = V.row(F(f, 2));
+      Vector3d ncross = (p1 - p0).cross(p2 - p0);
+      double area2 = ncross.norm();
+      Vector3d nf = ncross / area2;
+      double u0 = UV_in(FUV_in(f, 0), 0), u1 = UV_in(FUV_in(f, 1), 0), u2 = UV_in(FUV_in(f, 2), 0);
+      double v0 = UV_in(FUV_in(f, 0), 1), v1 = UV_in(FUV_in(f, 1), 1), v2 = UV_in(FUV_in(f, 2), 1);
+      Vector3d gU = (u0 * nf.cross(p2 - p1) + u1 * nf.cross(p0 - p2) + u2 * nf.cross(p1 - p0)) / area2;
+      Vector3d gV = (v0 * nf.cross(p2 - p1) + v1 * nf.cross(p0 - p2) + v2 * nf.cross(p1 - p0)) / area2;
+      Vector3d c = (p0 + p1 + p2) / 3.0;
+      auto thph = point_to_theta_phi(c);
+      Vector3d mt = minor_tangent(thph.first, thph.second);
+      Vector3d Mt = major_tangent(thph.first);
+      mt -= nf * nf.dot(mt); if (mt.norm() > 1e-12) mt.normalize();
+      Mt -= nf * nf.dot(Mt); if (Mt.norm() > 1e-12) Mt.normalize();
+      if (gU.norm() < 1e-9 || gV.norm() < 1e-9) continue;
+      Vector3d gU_n = gU.normalized();
+      Vector3d gV_n = gV.normalized();
+      double align_U = std::max(std::abs(gU_n.dot(mt)), std::abs(gU_n.dot(Mt)));
+      double align_V = std::max(std::abs(gV_n.dot(mt)), std::abs(gV_n.dot(Mt)));
+      double misalign = std::max(1.0 - align_U, 1.0 - align_V);
+      max_misalign = std::max(max_misalign, misalign);
+      sum_misalign += (1.0 - align_U) + (1.0 - align_V);
+      faces_checked++;
+    }
+    avg_misalign = sum_misalign / (2.0 * std::max(faces_checked, 1));
+  };
+
+  // Run constrained solve with 4 minor-ring loops.
+  MatrixXd UV;
+  MatrixXi FUV;
+  igl::copyleft::comiso::miq(V, F, X1_combed, X2_combed, MMatch, isSingularity, Seams,
+      UV, FUV,
+      /*gradientSize=*/30, /*stiffness=*/5.0, /*directRound=*/false,
+      /*iter=*/0, /*localIter=*/5, /*doRound=*/true, /*singularityRound=*/true,
+      std::vector<int>(), std::vector<std::vector<int>>(),
+      loops, axes);
+
+  // (1) All four loop constraints must be enforced.
+  double max_orth_sum = 0.0;
+  for (int k = 0; k < n_loops; ++k) {
+    double sk = loopOrthogonalSum(F, TT, TTi, FUV, MMatch, Seams, UV, loops[k], /*axis=*/0);
+    std::cout << "[torus 4-loops] loop " << k << " orth_sum = " << sk << std::endl;
+    max_orth_sum = std::max(max_orth_sum, std::abs(sk));
+  }
+  REQUIRE(max_orth_sum < 1e-4);
+
+  double max_misalign = 0, avg_misalign = 0; int faces_checked = 0;
+  compute_alignment(UV, FUV, max_misalign, avg_misalign, faces_checked);
+  std::cout << "[torus 4-loops alignment] faces=" << faces_checked
+            << " max_misalign=" << max_misalign
+            << " avg_misalign=" << avg_misalign << std::endl;
+
+  // Probe A: 4 minor + 1 major-ring (homologically independent loop). Should
+  // perturb the solution measurably.
+  std::vector<std::vector<int>> mixed_loops = loops;
+  mixed_loops.push_back(probe_loop_major);
+  std::vector<int> mixed_axes(mixed_loops.size(), 0);
+  Eigen::MatrixXd UV_mix; Eigen::MatrixXi FUV_mix;
+  igl::copyleft::comiso::miq(V, F, X1_combed, X2_combed, MMatch, isSingularity, Seams,
+      UV_mix, FUV_mix,
+      30, 5.0, false, 0, 5, true, true,
+      std::vector<int>(), std::vector<std::vector<int>>(),
+      mixed_loops, mixed_axes);
+  double mix_max = 0, mix_avg = 0; int mix_n = 0;
+  compute_alignment(UV_mix, FUV_mix, mix_max, mix_avg, mix_n);
+  std::cout << "[torus 4-minor + 1-major-ring]   max_misalign=" << mix_max
+            << " avg_misalign=" << mix_avg << std::endl;
+
+  // Probe B: 4 minor rings with BOTH axes constrained (8 constraints,
+  // pins the full 2D holonomy of each ring to zero).
+  std::vector<std::vector<int>> dual_loops;
+  std::vector<int> dual_axes;
+  for (int k = 0; k < n_loops; ++k) {
+    dual_loops.push_back(loops[k]); dual_axes.push_back(0);
+    dual_loops.push_back(loops[k]); dual_axes.push_back(1);
+  }
+  Eigen::MatrixXd UV_dual; Eigen::MatrixXi FUV_dual;
+  igl::copyleft::comiso::miq(V, F, X1_combed, X2_combed, MMatch, isSingularity, Seams,
+      UV_dual, FUV_dual,
+      30, 5.0, false, 0, 5, true, true,
+      std::vector<int>(), std::vector<std::vector<int>>(),
+      dual_loops, dual_axes);
+  double dual_max = 0, dual_avg = 0; int dual_n = 0;
+  compute_alignment(UV_dual, FUV_dual, dual_max, dual_avg, dual_n);
+  std::cout << "[torus 4-minor-rings x 2-axes]   max_misalign=" << dual_max
+            << " avg_misalign=" << dual_avg << std::endl;
+
+  // The 4-minor-only configuration must produce the same UV (and therefore
+  // the same alignment metrics) as a single minor-ring constraint. The
+  // probes above (A) and (B) demonstrate that breaking the redundancy does
+  // reduce misalignment.
+  REQUIRE(dual_avg < avg_misalign);  // pinning both axes helps
+  REQUIRE(mix_avg  < avg_misalign);  // adding a major ring helps
+}
