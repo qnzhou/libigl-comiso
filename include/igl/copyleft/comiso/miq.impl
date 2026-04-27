@@ -44,6 +44,8 @@
 #include <igl/matlab_format.h>
 #include <igl/Timer.h>
 
+#include <stdexcept>
+
 #define DEBUGPRINT 0
 // Set to 0 to silence the per-step timing prints added for performance debugging.
 #define MIQ_TIMING_PRINT 0
@@ -860,6 +862,7 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::findFi
     }
   }
   std::cerr << "ERROR: no vertex has an incident face; cannot fix any vertex." << std::endl;
+  throw std::runtime_error("No vertex to fix");
 }
 
 ///find hard constraint depending if using or not
