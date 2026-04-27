@@ -317,7 +317,7 @@ namespace
         if (fn < 0) return rot;
         int kn = TTi(f_curr, k_exit);
         f_curr = fn;
-        kin = (kn + 2) % 3;
+        kin = kn;
         if (f_curr == f_to) return rot;
       }
       return rot;
@@ -504,4 +504,76 @@ TEST_CASE("miq: 3_holes_loop_one_ring", "[igl/copyleft/comiso]")
   // vertex, the natural solution does not satisfy the constraint, so the
   // baseline should be substantially larger than the constrained result.
   REQUIRE(s_base > 100.0 * s + 1e-6);
+}
+
+TEST_CASE("miq: 3_holes_loop_multi_step_fan", "[igl/copyleft/comiso]")
+{
+  // Loop [r_0, u, r_2, r_1, r_0] forces a multi-step fan walk at vertex u:
+  // f0 = face of (r_0, u), f1 = face of (u, r_2). These faces share only u
+  // (not an edge), so the fan walk between them traverses valence(u) - 3
+  // intermediate faces. Exercises the post-transition k_in update inside
+  // fanWalkRotation that is unreachable from any single-step fan loop.
+  using namespace Eigen;
+  Eigen::MatrixXd V; Eigen::MatrixXi F;
+  Eigen::MatrixXd X1, X2, BIS1, BIS2, BIS1_combed, BIS2_combed, X1_combed, X2_combed;
+  Eigen::Matrix<int, Eigen::Dynamic, 3> MMatch;
+  Eigen::Matrix<int, Eigen::Dynamic, 1> isSingularity, singularityIndex;
+  Eigen::Matrix<int, Eigen::Dynamic, 3> Seams;
+  Eigen::MatrixXd UV; Eigen::MatrixXi FUV;
+
+  igl::readOFF(test_common::data_path("3holes.off"), V, F);
+
+  VectorXi b(1); b << 0;
+  MatrixXd bc(1, 3); bc << 1, 0, 0;
+  VectorXd S;
+  igl::copyleft::comiso::nrosy(V, F, b, bc, VectorXi(), VectorXd(), MatrixXd(), 4, 0.5, X1, S);
+  MatrixXd B1, B2, B3;
+  igl::local_basis(V, F, B1, B2, B3);
+  X2 = igl::rotate_vectors(X1, VectorXd::Constant(1, igl::PI / 2), B1, B2);
+  igl::compute_frame_field_bisectors(V, F, X1, X2, BIS1, BIS2);
+  igl::comb_cross_field(V, F, BIS1, BIS2, BIS1_combed, BIS2_combed);
+  igl::cross_field_mismatch(V, F, BIS1_combed, BIS2_combed, true, MMatch);
+  igl::find_cross_field_singularities(V, F, MMatch, isSingularity, singularityIndex);
+  igl::cut_mesh_from_singularities(V, F, MMatch, Seams);
+  igl::comb_frame_field(V, F, X1, X2, BIS1_combed, BIS2_combed, X1_combed, X2_combed);
+
+  Eigen::MatrixXi TT, TTi;
+  igl::triangle_triangle_adjacency(F, TT, TTi);
+
+  std::vector<std::vector<int>> VF, VFi;
+  igl::vertex_triangle_adjacency(V, F, VF, VFi);
+
+  // Find a vertex with valence >= 5 so the fan walk has >= 2 intermediate
+  // steps (valence - 3).
+  int u = -1;
+  for (int v = 0; v < V.rows(); ++v) {
+    if (static_cast<int>(VF[v].size()) >= 5) { u = v; break; }
+  }
+  REQUIRE(u >= 0);
+
+  std::vector<int> ring = oneRingLoop(F, TT, VF, u);
+  REQUIRE(ring.size() >= 5);
+
+  // [r_0, u, r_2, r_1] — closes back to r_0 via implicit (r_1, r_0) edge.
+  std::vector<int> loop = { ring[0], u, ring[2], ring[1] };
+  std::vector<std::vector<int>> loops = { loop };
+  std::vector<int> axes = { 0 }; // U-axis as orthogonal
+
+  // Baseline (no constraint).
+  Eigen::MatrixXd UV_base; Eigen::MatrixXi FUV_base;
+  igl::copyleft::comiso::miq(V, F, X1_combed, X2_combed, MMatch, isSingularity, Seams,
+      UV_base, FUV_base, 50, 5.0, false, 0, 5, true, true);
+  double s_base = loopOrthogonalSum(F, TT, TTi, FUV_base, MMatch, Seams, UV_base, loop, 0);
+
+  // Constrained.
+  igl::copyleft::comiso::miq(V, F, X1_combed, X2_combed, MMatch, isSingularity, Seams,
+      UV, FUV, 50, 5.0, false, 0, 5, true, true,
+      std::vector<int>(), std::vector<std::vector<int>>(),
+      loops, axes);
+  double s = loopOrthogonalSum(F, TT, TTi, FUV, MMatch, Seams, UV, loop, 0);
+
+  std::cout << "[loop multi-step u=" << u << " valence=" << VF[u].size()
+            << "] baseline=" << s_base << " constrained=" << s << std::endl;
+
+  REQUIRE(s < 1e-4);
 }

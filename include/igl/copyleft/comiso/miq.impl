@@ -1334,12 +1334,12 @@ IGL_INLINE int igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::fanWalk
     }
     int k_next = TTi(f_curr, k_exit);
     f_curr = f_next;
-    // in f_next, the shared vertex has local index k_next ((k_next,k_next+1)
-    // is the half-edge in f_next opposite to the half-edge we just crossed).
-    // The "incoming" half-edge of f_next at vertex is the reverse of the
-    // exiting half-edge of f_curr, so k_in for f_next is (k_next + 2) % 3
-    // (so that F(f_next, (k_in+1)%3) == vertex).
-    k_in = (k_next + 2) % 3;
+    // The half-edge we just crossed exits f_curr at edge k_exit as
+    // (vertex, third). Its reverse lives in f_next at local edge k_next as
+    // (third, vertex), i.e. F(f_next, k_next) = third and
+    // F(f_next, (k_next+1)%3) = vertex. That reversed half-edge IS the
+    // incoming half-edge for the next iteration, so k_in = k_next.
+    k_in = k_next;
     if (f_curr == f_to) return rot;
   }
   std::cerr << "WARNING: fanWalkRotation did not reach target face within bounds." << std::endl;
