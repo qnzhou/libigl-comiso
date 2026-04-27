@@ -39,8 +39,8 @@ namespace igl
     /// @param[in] singularityRound  set true/false to decide if the singularities' coordinates should be rounded to the nearest integers
     /// @param[in] roundVertices     id of additional vertices that should be snapped to integer coordinates
     /// @param[in] hardFeatures      #H by 2 list of (face_id, local_vertex_id) pairs identifying edges to be snapped to integer coordinates; local_vertex_id is the index of the edge's first vertex within the face (0, 1, or 2)
-    /// @param[in] chains             list of vertex chains; a closed loop repeats the first vertex at the end (e.g. [v_0,...,v_{n-1},v_0]); an open chain does not (e.g. [v_0,...,v_{n-1}]); edges are consecutive pairs in both cases
-    /// @param[in] chain_orthogonal_axis  per-loop initial orthogonal axis in the starting face's UV frame (0 = U, 1 = V). When non-empty, must have the same length as `chains`. Adds one hard linear constraint per loop forcing the parallel-transported orthogonal component of the accumulated UV displacement around the loop to zero.
+    /// @param[in] chains             list of vertex chains; a closed chain repeats the first vertex at the end (e.g. [v_0,...,v_{n-1},v_0]); an open chain does not (e.g. [v_0,...,v_{n-1}]); edges are consecutive pairs in both cases
+    /// @param[in] chain_orthogonal_axis  per-chain initial orthogonal axis in the starting face's UV frame (0 = U, 1 = V). When non-empty, must have the same length as `chains`. Adds one hard linear constraint per chain forcing the parallel-transported orthogonal component of the accumulated UV displacement around the chain to zero.
     /// @param[out] UV                 #UV by 2 list of vertices in 2D
     /// @param[out] FUV                #FUV by 3 list of face indices in UV
     ///

@@ -692,8 +692,8 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::solveP
   }
   stage_ms(n_sharp ? "addSharpEdgeConstraint (x sharp)" : "addSharpEdgeConstraint (none)");
 
-  // user-supplied loop constraints: orthogonal component of accumulated UV
-  // displacement around the loop = 0.
+  // user-supplied chain constraints: orthogonal component of accumulated UV
+  // displacement around the chain = 0.
   int n_chains_added = 0;
   if (!chains.empty())
   {
