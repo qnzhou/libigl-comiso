@@ -42,8 +42,11 @@
 #endif
 #include <iostream>
 #include <igl/matlab_format.h>
+#include <igl/Timer.h>
 
 #define DEBUGPRINT 0
+// Set to 0 to silence the per-step timing prints added for performance debugging.
+#define MIQ_TIMING_PRINT 1
 
 
 namespace igl {
@@ -643,6 +646,19 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::solveP
                                                                                        const std::vector<std::vector<int>> &loops,
                                                                                        const std::vector<int> &loop_orthogonal_axis)
 {
+  igl::Timer t_total, t_stage;
+  t_total.start();
+  t_stage.start();
+  auto stage_ms = [&](const char *name) {
+#if MIQ_TIMING_PRINT
+    double ms = t_stage.getElapsedTimeInMilliSec();
+    std::printf("[miq solvePoisson] %-32s %10.3f ms\n", name, ms);
+    t_stage.start();
+#else
+    (void)name;
+#endif
+  };
+
   Handle_Stiffness = stiffness;
 
   //initialization of flags and data structures
@@ -652,6 +668,7 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::solveP
 
   clearUserConstraint();
   // copy the user constraints number
+  int n_sharp = 0;
   for (const auto & element : hardFeatures)
   {
     if (element.size() < 2)
@@ -667,10 +684,13 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::solveP
       continue;
     }
     addSharpEdgeConstraint(fid, vid);
+    ++n_sharp;
   }
+  stage_ms(n_sharp ? "addSharpEdgeConstraint (x sharp)" : "addSharpEdgeConstraint (none)");
 
   // user-supplied loop constraints: orthogonal component of accumulated UV
   // displacement around the loop = 0.
+  int n_loops_added = 0;
   if (!loops.empty())
   {
     if (!loop_orthogonal_axis.empty() && loop_orthogonal_axis.size() != loops.size())
@@ -684,54 +704,58 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::solveP
       {
         const int axis = loop_orthogonal_axis.empty() ? 0 : loop_orthogonal_axis[li];
         addLoopConstraint(loops[li], axis);
+        ++n_loops_added;
       }
     }
   }
-
-  ///Initializing Matrix
-  clock_t t0 = clock();
+#if MIQ_TIMING_PRINT
+  if (n_loops_added > 0) {
+    char label[64];
+    std::snprintf(label, sizeof(label), "addLoopConstraint (x %d)", n_loops_added);
+    stage_ms(label);
+  } else {
+    stage_ms("addLoopConstraint (none)");
+  }
+#endif
 
   ///initialize the matrix ALLOCATING SPACE
   initMatrix();
-  if (DEBUGPRINT)
-    printf("\n ALLOCATED THE MATRIX \n");
+  stage_ms("initMatrix");
 
   ///build the Laplacian system
   buildLaplacianMatrix(gradientSize);
+  stage_ms("buildLaplacianMatrix");
 
   // add seam constraints
   buildSeamConstraintsExplicitTranslation();
+  stage_ms("buildSeamConstraintsExplicit");
 
   // add user defined constraints
   buildUserDefinedConstraints();
+  stage_ms("buildUserDefinedConstraints");
 
   ////add the Lagrange multiplier
   fixBlockedVertex();
-
-  if (DEBUGPRINT)
-    printf("\n BUILT THE MATRIX \n");
+  stage_ms("fixBlockedVertex");
 
   if (integer_rounding)
     addToRoundVertices(roundVertices);
 
   if (singularityRound)
     addSingularityRound();
-
-  clock_t t1 = clock();
-  if (DEBUGPRINT) printf("\n time:%ld \n",t1-t0);
-  if (DEBUGPRINT) printf("\n SOLVING \n");
+  stage_ms("round-vertex setup");
 
   mixedIntegerSolve(gridResolution, directRound, localIter);
-
-  clock_t t2 = clock();
-  if (DEBUGPRINT) printf("\n time:%ld \n",t2-t1);
-  if (DEBUGPRINT) printf("\n ASSIGNING COORDS \n");
+  stage_ms("mixedIntegerSolve (CoMISo)");
 
   mapCoords();
+  stage_ms("mapCoords");
 
-  clock_t t3 = clock();
-  if (DEBUGPRINT) printf("\n time:%ld \n",t3-t2);
-  if (DEBUGPRINT) printf("\n FINISHED \n");
+#if MIQ_TIMING_PRINT
+  double total_ms = t_total.getElapsedTimeInMilliSec();
+  std::printf("[miq solvePoisson] %-32s %10.3f ms (n_sharp=%d, n_loops=%d, n_seam_eqs=%u, n_total_vars=%u)\n",
+              "TOTAL", total_ms, n_sharp, n_loops_added, num_cut_constraint, num_total_vars);
+#endif
 }
 
 template <typename DerivedV, typename DerivedF>
@@ -1473,15 +1497,32 @@ IGL_INLINE igl::copyleft::comiso::MIQ_class<DerivedV, DerivedF, DerivedU>::MIQ_c
 V(V_),
 F(F_)
 {
+  igl::Timer t_miq_total, t_outer;
+  t_miq_total.start();
+  t_outer.start();
+  auto outer_ms = [&](const char *name) {
+#if MIQ_TIMING_PRINT
+    double ms = t_outer.getElapsedTimeInMilliSec();
+    std::printf("[miq MIQ_class]    %-32s %10.3f ms\n", name, ms);
+    t_outer.start();
+#else
+    (void)name;
+#endif
+  };
+
   igl::cut_mesh(V, F, seams, Vcut, Fcut);
+  outer_ms("cut_mesh");
 
   igl::local_basis(V,F,B1,B2,B3);
+  outer_ms("local_basis");
   igl::triangle_triangle_adjacency(F,TT,TTi);
+  outer_ms("triangle_triangle_adjacency");
 
   // Prepare indexing for the linear system
   VertexIndexing<DerivedV, DerivedF> VInd(V, F, Vcut, Fcut, TT, TTi, mismatch, singular, seams);
 
   VInd.initSeamInfo();
+  outer_ms("VertexIndexing + initSeamInfo");
 
   // Assemble the system and solve
   PoissonSolver<DerivedV, DerivedF> PSolver(V,
@@ -1497,17 +1538,29 @@ F(F_)
                                             seams,
                                             VInd.systemInfo);
   stiffnessVector = Eigen::VectorXd::Constant(F.rows(),1);
+  outer_ms("PoissonSolver ctor");
 
 
   if (iter > 0) // do stiffening
   {
     for (unsigned int i=0;i<iter;i++)
     {
+      igl::Timer t_iter;
+      t_iter.start();
+#if MIQ_TIMING_PRINT
+      std::printf("[miq MIQ_class]    --- stiffening iter %u ---\n", i);
+#endif
       PSolver.solvePoisson(stiffnessVector, gradientSize, 1.f, directRound, localIter, doRound, singularityRound,
                            roundVertices, hardFeatures, loops, loop_orthogonal_axis);
       int nflips=NumFlips(PSolver.WUV);
       bool folded = updateStiffeningJacobianDistorsion(gradientSize,PSolver.WUV);
       printf("ITERATION %d FLIPS %d \n",i,nflips);
+#if MIQ_TIMING_PRINT
+      double iter_ms = t_iter.getElapsedTimeInMilliSec();
+      std::printf("[miq MIQ_class]    stiffening iter %u total: %.3f ms (flips=%d, folded=%d)\n",
+                  i, iter_ms, nflips, folded ? 1 : 0);
+      t_outer.start();
+#endif
       if (!folded)break;
     }
   }
@@ -1515,6 +1568,7 @@ F(F_)
   {
     PSolver.solvePoisson(stiffnessVector, gradientSize, 1.f, directRound, localIter, doRound, singularityRound,
                          roundVertices, hardFeatures, loops, loop_orthogonal_axis);
+    outer_ms("solvePoisson (no stiffening)");
   }
 
   int nflips=NumFlips(PSolver.WUV);
@@ -1523,6 +1577,12 @@ F(F_)
   UV_out = PSolver.UV_out;
   FUV_out = PSolver.Fcut;
   fflush(stdout);
+
+#if MIQ_TIMING_PRINT
+  double miq_total_ms = t_miq_total.getElapsedTimeInMilliSec();
+  std::printf("[miq MIQ_class]    %-32s %10.3f ms (iter=%u, n_loops=%zu)\n",
+              "MIQ_class TOTAL", miq_total_ms, iter, loops.size());
+#endif
 }
 
 template <typename DerivedV, typename DerivedF, typename DerivedU>
