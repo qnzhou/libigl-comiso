@@ -1155,7 +1155,9 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::buildU
     }
     for (size_t j = 0; j + 1 < row_size; ++j)
     {
-      Constraints.coeffRef(constr_row, j) = userdefined_constraints[i][j];
+      const int v = userdefined_constraints[i][j];
+      if (v != 0)
+        Constraints.coeffRef(constr_row, j) = v;
     }
 
     constraints_rhs[constr_row] = userdefined_constraints[i][row_size-1];
