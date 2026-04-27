@@ -46,7 +46,7 @@
 
 #define DEBUGPRINT 0
 // Set to 0 to silence the per-step timing prints added for performance debugging.
-#define MIQ_TIMING_PRINT 1
+#define MIQ_TIMING_PRINT 0
 
 
 namespace igl {
