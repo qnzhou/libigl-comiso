@@ -130,7 +130,7 @@ ACM SIGGRAPH 2009, Article No. 77
 :param doRound: enables the integer rounding (disabling useful for debugging)
 :param singularityRound: round singularities' coordinates to nearest integers
 :param roundVertices: additional vertices that should be snapped to integer coordinates
-:param hardFeatures: pairs of vertices that belong to edges that should be snapped to integer coordinates
+:param hardFeatures: list of (face_id, local_vertex_id) pairs identifying edges to be snapped to integer coordinates; local_vertex_id is the index of the edge's first vertex within the face (0, 1, or 2)
 :param loops: list of closed vertex loops; each loop is a sequence [v_0, ..., v_{n-1}] with the implicit closing edge from v_{n-1} back to v_0
 :param loop_orthogonal_axis: per-loop initial orthogonal axis in the starting face's UV frame (0 = U, 1 = V); when non-empty must match len(loops)
 :returns: UV, FUV where UV is #UV by 2 list of vertices in 2D and FUV is #FUV by 3 list of face indices in UV)");
@@ -216,7 +216,7 @@ ACM SIGGRAPH 2009, Article No. 77
 :param doRound: enables the integer rounding (disabling useful for debugging)
 :param singularityRound: round singularities' coordinates to nearest integers
 :param roundVertices: additional vertices that should be snapped to integer coordinates
-:param hardFeatures: pairs of vertices that belong to edges that should be snapped to integer coordinates
+:param hardFeatures: list of (face_id, local_vertex_id) pairs identifying edges to be snapped to integer coordinates; local_vertex_id is the index of the edge's first vertex within the face (0, 1, or 2)
 :param loops: list of closed vertex loops; each loop is a sequence [v_0, ..., v_{n-1}] with the implicit closing edge from v_{n-1} back to v_0
 :param loop_orthogonal_axis: per-loop initial orthogonal axis in the starting face's UV frame (0 = U, 1 = V); when non-empty must match len(loops)
 :returns: UV, FUV where UV is #UV by 2 list of vertices in 2D and FUV is #FUV by 3 list of face indices in UV)");
