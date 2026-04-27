@@ -324,16 +324,17 @@ namespace
     };
 
     const int n = static_cast<int>(loop.size());
-    std::vector<int> face(n), k_local(n);
-    for (int i = 0; i < n; ++i) {
+    const int num_edges = n - 1; // closed: loop.front()==loop.back(); open: distinct endpoints
+    std::vector<int> face(num_edges), k_local(num_edges);
+    for (int i = 0; i < num_edges; ++i) {
       int k;
-      int f = faceOfHE(loop[i], loop[(i + 1) % n], k);
+      int f = faceOfHE(loop[i], loop[i + 1], k);
       face[i] = f;
       k_local[i] = k;
     }
     int rot_state = axis;
     double total = 0.0;
-    for (int i = 0; i < n; ++i) {
+    for (int i = 0; i < num_edges; ++i) {
       const int f_i = face[i];
       const int kc = k_local[i];
       const int kn = (kc + 1) % 3;
@@ -342,9 +343,9 @@ namespace
       auto np = axis_components(rot_state);
       total += np.first  * (UV(cn, 0) - UV(cc, 0));
       total += np.second * (UV(cn, 1) - UV(cc, 1));
-      if (i + 1 < n) {
-        const int v_shared = loop[(i + 1) % n];
-        const int f_next = face[(i + 1) % n];
+      if (i + 1 < num_edges) {
+        const int v_shared = loop[i + 1];
+        const int f_next = face[i + 1];
         if (f_i != f_next) {
           int dr = fanWalk(v_shared, f_i, kc, f_next);
           rot_state = (rot_state + dr) % 4;
@@ -477,6 +478,7 @@ TEST_CASE("miq: 3_holes_loop_one_ring", "[igl/copyleft/comiso]")
 
   std::vector<int> ring = oneRingLoop(F, TT, VF, center);
   REQUIRE(ring.size() >= 4);
+  ring.push_back(ring.front()); // close the loop
 
   // Baseline: solve without the loop constraint and measure orthogonal sum.
   Eigen::MatrixXd UV_base; Eigen::MatrixXi FUV_base;
@@ -554,8 +556,8 @@ TEST_CASE("miq: 3_holes_loop_multi_step_fan", "[igl/copyleft/comiso]")
   std::vector<int> ring = oneRingLoop(F, TT, VF, u);
   REQUIRE(ring.size() >= 5);
 
-  // [r_0, u, r_2, r_1] — closes back to r_0 via implicit (r_1, r_0) edge.
-  std::vector<int> chain = { ring[0], u, ring[2], ring[1] };
+  // [r_0, u, r_2, r_1, r_0] — closed loop; last vertex repeats first.
+  std::vector<int> chain = { ring[0], u, ring[2], ring[1], ring[0] };
   std::vector<std::vector<int>> chains = { chain };
   std::vector<int> axes = { 0 }; // U-axis as orthogonal
 
@@ -681,6 +683,7 @@ TEST_CASE("miq: torus_minor_ring_loop_alignment", "[igl/copyleft/comiso]")
   // === Minor ring loop at theta_0 = 0: vertices [V[0][0], V[0][1], ..., V[0][n_phi-1]] ===
   std::vector<int> minor_loop;
   for (int j = 0; j < n_phi; ++j) minor_loop.push_back(0 * n_phi + j);
+  minor_loop.push_back(minor_loop.front()); // close the loop
 
   auto compute_alignment = [&](const Eigen::MatrixXd &UV_in, const Eigen::MatrixXi &FUV_in,
                                double &max_misalign, double &avg_misalign, int &faces_checked) {
@@ -877,6 +880,7 @@ TEST_CASE("miq: torus_four_minor_ring_loops_alignment", "[igl/copyleft/comiso]")
   for (int k = 0; k < n_chains; ++k) {
     int i = (n_theta / n_chains) * k;
     for (int j = 0; j < n_phi; ++j) chains[k].push_back(i * n_phi + j);
+    chains[k].push_back(chains[k].front()); // close the loop
   }
 
   // Probe: try also a major-ring loop (different homology class on the torus).
@@ -885,6 +889,7 @@ TEST_CASE("miq: torus_four_minor_ring_loops_alignment", "[igl/copyleft/comiso]")
   std::vector<int> probe_loop_major;
   const int probe_phi = 0;
   for (int i = 0; i < n_theta; ++i) probe_loop_major.push_back(i * n_phi + probe_phi);
+  probe_loop_major.push_back(probe_loop_major.front()); // close the loop
 
   auto compute_alignment = [&](const Eigen::MatrixXd &UV_in, const Eigen::MatrixXi &FUV_in,
                                double &max_misalign, double &avg_misalign, int &faces_checked) {
