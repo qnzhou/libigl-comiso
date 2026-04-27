@@ -699,8 +699,7 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::solveP
   {
     if (!chain_orthogonal_axis.empty() && chain_orthogonal_axis.size() != chains.size())
     {
-      std::cerr << "WARNING: chain_orthogonal_axis size (" << chain_orthogonal_axis.size()
-                << ") does not match chains size (" << chains.size() << "); ignoring all chains." << std::endl;
+      throw std::runtime_error("chain_orthogonal_axis size does not match chains size");
     }
     else
     {
@@ -1360,8 +1359,7 @@ IGL_INLINE int igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::fanWalk
     {
       // Boundary encountered before reaching f_to; fan is open. Mesh was
       // assumed manifold + closed; bail out.
-      std::cerr << "WARNING: fanWalkRotation hit a boundary before reaching target face." << std::endl;
-      return 0;
+      throw std::runtime_error("fanWalkRotation hit a boundary before reaching target face.");
     }
     int k_next = TTi(f_curr, k_exit);
     f_curr = f_next;
