@@ -520,11 +520,13 @@ IGL_INLINE std::vector<std::vector<typename igl::copyleft::comiso::VertexIndexin
   for (auto element : startVertexIndices)
   {
     auto startVertexNeighbors = &VVSeam[element];
-    size_t neighborSize = startVertexNeighbors->size();
 
-    // explore every seam to which this vertex is a start vertex
-    // note: a vertex can never be a start vertex and a regular vertex simultaneously
-    for (size_t j = 0; j < neighborSize; j++)
+    // explore every seam to which this vertex is a start vertex.
+    // note: a vertex can never be a start vertex and a regular vertex
+    // simultaneously. The inner walk may erase entries from
+    // VVSeam[element] when a seam loops back to `element`, so re-check
+    // emptiness each iteration rather than capturing an upfront count.
+    while (!startVertexNeighbors->empty())
     {
       std::vector<VertexInfo> thisSeam; // temporary container
 
