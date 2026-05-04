@@ -151,7 +151,7 @@ TEST_CASE("miq: 3_holes_quantization", "[igl/copyleft/comiso]")
   igl::readOFF(test_common::data_path("3holes.off"), V, F);
 
   double gradient_size = 50;
-  double iter = 0;
+  unsigned int iter = 0;
   double stiffness = 5.0;
   bool direct_round = 0;
 
