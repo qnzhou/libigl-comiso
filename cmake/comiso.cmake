@@ -34,6 +34,10 @@ foreach(filepath IN ITEMS ${INC_FILES})
 endforeach()
 
 target_include_directories(CoMISo PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/CoMISo/include)
+# CoMISo's cmake-library sets -DINCLUDE_TEMPLATES globally, which pulls in                                                                                                                          
+# ExactConstraintProjection_impl.hh. That file uses assert() without including                                                                                                                      
+# <cassert>, relying on Eigen 3 to leak it. Eigen 5 (conda-forge) does not.                                                                                                                         
+target_compile_options(CoMISo PRIVATE "-include" "cassert")
 target_link_libraries(CoMISo PUBLIC gmm::gmm)
 
 set_target_properties(CoMISo PROPERTIES FOLDER ThirdParty)

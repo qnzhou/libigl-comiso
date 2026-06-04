@@ -42,8 +42,14 @@
 #endif
 #include <iostream>
 #include <igl/matlab_format.h>
+#include <igl/Timer.h>
+
+#include <cstdio>
+#include <stdexcept>
 
 #define DEBUGPRINT 0
+// Set to 0 to silence the per-step timing prints added for performance debugging.
+#define MIQ_TIMING_PRINT 0
 
 
 namespace igl {
@@ -154,7 +160,9 @@ namespace comiso {
                                  bool doRound = true,
                                  bool singularityRound = true,
                                  const std::vector<int> &roundVertices = std::vector<int>(),
-                                 const std::vector<std::vector<int>> &hardFeatures = std::vector<std::vector<int> >());
+                                 const std::vector<std::vector<int>> &hardFeatures = std::vector<std::vector<int> >(),
+                                 const std::vector<std::vector<int>> &chains = std::vector<std::vector<int> >(),
+                                 const std::vector<int> &chain_orthogonal_axis = std::vector<int>());
 
     IGL_INLINE PoissonSolver(const Eigen::PlainObjectBase<DerivedV> &_V,
                              const Eigen::PlainObjectBase<DerivedF> &_F,
@@ -165,6 +173,8 @@ namespace comiso {
                              const Eigen::PlainObjectBase<DerivedV> &_PD1,
                              const Eigen::PlainObjectBase<DerivedV> &_PD2,
                              const Eigen::Matrix<int, Eigen::Dynamic, 1>&_singular,
+                             const Eigen::Matrix<int, Eigen::Dynamic, 3>&_mismatch,
+                             const Eigen::Matrix<int, Eigen::Dynamic, 3>&_seams,
                              const MeshSystemInfo &_systemInfo
                              );
 
@@ -177,6 +187,8 @@ namespace comiso {
     const Eigen::PlainObjectBase<DerivedV> &PD1;
     const Eigen::PlainObjectBase<DerivedV> &PD2;
     const Eigen::Matrix<int, Eigen::Dynamic, 1> &singular; // bool
+    const Eigen::Matrix<int, Eigen::Dynamic, 3> &mismatch;
+    const Eigen::Matrix<int, Eigen::Dynamic, 3> &seams;
 
     const MeshSystemInfo &systemInfo;
 
@@ -300,6 +312,27 @@ namespace comiso {
 
     IGL_INLINE void addSharpEdgeConstraint(int fid, int vid);
 
+    /// Add a hard linear constraint forcing the parallel-transported orthogonal
+    /// component of the accumulated UV displacement along a vertex chain to zero.
+    /// Closed loop: chain.front() == chain.back(), e.g. [v0, v1, v2, v0].
+    /// Open chain:  chain.front() != chain.back(), e.g. [v0, v1, v2].
+    /// In both cases edges are consecutive pairs chain[i]->chain[i+1].
+    /// `axis` is 0 (U) or 1 (V) in the starting face's UV frame.
+    IGL_INLINE void addChainConstraint(const std::vector<int> &chain, int axis);
+
+    /// Find the unique face containing oriented half-edge (v0, v1).
+    /// Returns the face id and writes the local edge index (k where F(f,k)=v0,
+    /// F(f,(k+1)%3)=v1) into k_out. Returns -1 if not found.
+    IGL_INLINE int faceOfHalfEdge(int v0, int v1, int &k_out) const;
+
+    /// Walk the face fan around `vertex` from `f_from` to `f_to` using the
+    /// half-edge "after the incoming half-edge" rule. Returns the cumulative
+    /// rotation in {0,1,2,3} (each unit = 90 degrees) from seam crossings.
+    /// `k_in_from` is the local edge index in `f_from` of the half-edge
+    /// arriving at `vertex` (so F(f_from, k_in_from)=prev_vertex,
+    /// F(f_from, (k_in_from+1)%3)=vertex).
+    IGL_INLINE int fanWalkRotation(int vertex, int f_from, int k_in_from, int f_to) const;
+
   };
 
   template <typename DerivedV, typename DerivedF, typename DerivedU>
@@ -339,7 +372,9 @@ namespace comiso {
                          bool doRound = true,
                          bool singularityRound = true,
                          std::vector<int> roundVertices = std::vector<int>(),
-                         std::vector<std::vector<int> > hardFeatures = std::vector<std::vector<int> >());
+                         std::vector<std::vector<int> > hardFeatures = std::vector<std::vector<int> >(),
+                         std::vector<std::vector<int> > chains = std::vector<std::vector<int> >(),
+                         std::vector<int> chain_orthogonal_axis = std::vector<int>());
 
 
     IGL_INLINE void extractUV(Eigen::PlainObjectBase<DerivedU> &UV_out,
@@ -485,11 +520,13 @@ IGL_INLINE std::vector<std::vector<typename igl::copyleft::comiso::VertexIndexin
   for (auto element : startVertexIndices)
   {
     auto startVertexNeighbors = &VVSeam[element];
-    size_t neighborSize = startVertexNeighbors->size();
 
-    // explore every seam to which this vertex is a start vertex
-    // note: a vertex can never be a start vertex and a regular vertex simultaneously
-    for (size_t j = 0; j < neighborSize; j++)
+    // explore every seam to which this vertex is a start vertex.
+    // note: a vertex can never be a start vertex and a regular vertex
+    // simultaneously. The inner walk may erase entries from
+    // VVSeam[element] when a seam loops back to `element`, so re-check
+    // emptiness each iteration rather than capturing an upfront count.
+    while (!startVertexNeighbors->empty())
     {
       std::vector<VertexInfo> thisSeam; // temporary container
 
@@ -611,8 +648,23 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::solveP
                                                                                        bool doRound,
                                                                                        bool singularityRound,
                                                                                        const std::vector<int> &roundVertices,
-                                                                                       const std::vector<std::vector<int>> &hardFeatures)
+                                                                                       const std::vector<std::vector<int>> &hardFeatures,
+                                                                                       const std::vector<std::vector<int>> &chains,
+                                                                                       const std::vector<int> &chain_orthogonal_axis)
 {
+  igl::Timer t_total, t_stage;
+  t_total.start();
+  t_stage.start();
+  auto stage_ms = [&](const char *name) {
+#if MIQ_TIMING_PRINT
+    double ms = t_stage.getElapsedTimeInMilliSec();
+    std::printf("[miq solvePoisson] %-32s %10.3f ms\n", name, ms);
+    t_stage.start();
+#else
+    (void)name;
+#endif
+  };
+
   Handle_Stiffness = stiffness;
 
   //initialization of flags and data structures
@@ -622,55 +674,93 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::solveP
 
   clearUserConstraint();
   // copy the user constraints number
+  int n_sharp = 0;
   for (const auto & element : hardFeatures)
   {
-    addSharpEdgeConstraint(element[0], element[1]);
+    if (element.size() < 2)
+    {
+      std::cerr << "WARNING: hardFeatures entry has fewer than 2 ids; skipped." << std::endl;
+      continue;
+    }
+    const int fid = element[0];
+    const int vid = element[1];
+    if (fid < 0 || fid >= static_cast<int>(F.rows()) || vid < 0 || vid > 2)
+    {
+      std::cerr << "WARNING: hardFeatures (" << fid << "," << vid << ") out of range; skipped." << std::endl;
+      continue;
+    }
+    addSharpEdgeConstraint(fid, vid);
+    ++n_sharp;
   }
+  stage_ms(n_sharp ? "addSharpEdgeConstraint (x sharp)" : "addSharpEdgeConstraint (none)");
 
-  ///Initializing Matrix
-  clock_t t0 = clock();
+  // user-supplied chain constraints: orthogonal component of accumulated UV
+  // displacement around the chain = 0.
+  int n_chains_added = 0;
+  if (!chains.empty())
+  {
+    if (!chain_orthogonal_axis.empty() && chain_orthogonal_axis.size() != chains.size())
+    {
+      throw std::runtime_error("chain_orthogonal_axis size does not match chains size");
+    }
+    else
+    {
+      for (size_t li = 0; li < chains.size(); ++li)
+      {
+        const int axis = chain_orthogonal_axis.empty() ? 0 : chain_orthogonal_axis[li];
+        addChainConstraint(chains[li], axis);
+        ++n_chains_added;
+      }
+    }
+  }
+#if MIQ_TIMING_PRINT
+  if (n_chains_added > 0) {
+    char label[64];
+    std::snprintf(label, sizeof(label), "addChainConstraint (x %d)", n_chains_added);
+    stage_ms(label);
+  } else {
+    stage_ms("addChainConstraint (none)");
+  }
+#endif
 
   ///initialize the matrix ALLOCATING SPACE
   initMatrix();
-  if (DEBUGPRINT)
-    printf("\n ALLOCATED THE MATRIX \n");
+  stage_ms("initMatrix");
 
   ///build the Laplacian system
   buildLaplacianMatrix(gradientSize);
+  stage_ms("buildLaplacianMatrix");
 
   // add seam constraints
   buildSeamConstraintsExplicitTranslation();
+  stage_ms("buildSeamConstraintsExplicit");
 
   // add user defined constraints
   buildUserDefinedConstraints();
+  stage_ms("buildUserDefinedConstraints");
 
   ////add the Lagrange multiplier
   fixBlockedVertex();
-
-  if (DEBUGPRINT)
-    printf("\n BUILT THE MATRIX \n");
+  stage_ms("fixBlockedVertex");
 
   if (integer_rounding)
     addToRoundVertices(roundVertices);
 
   if (singularityRound)
     addSingularityRound();
-
-  clock_t t1 = clock();
-  if (DEBUGPRINT) printf("\n time:%ld \n",t1-t0);
-  if (DEBUGPRINT) printf("\n SOLVING \n");
+  stage_ms("round-vertex setup");
 
   mixedIntegerSolve(gridResolution, directRound, localIter);
-
-  clock_t t2 = clock();
-  if (DEBUGPRINT) printf("\n time:%ld \n",t2-t1);
-  if (DEBUGPRINT) printf("\n ASSIGNING COORDS \n");
+  stage_ms("mixedIntegerSolve (CoMISo)");
 
   mapCoords();
+  stage_ms("mapCoords");
 
-  clock_t t3 = clock();
-  if (DEBUGPRINT) printf("\n time:%ld \n",t3-t2);
-  if (DEBUGPRINT) printf("\n FINISHED \n");
+#if MIQ_TIMING_PRINT
+  double total_ms = t_total.getElapsedTimeInMilliSec();
+  std::printf("[miq solvePoisson] %-32s %10.3f ms (n_sharp=%d, n_chains=%d, n_seam_eqs=%u, n_total_vars=%u)\n",
+              "TOTAL", total_ms, n_sharp, n_chains_added, num_cut_constraint, num_total_vars);
+#endif
 }
 
 template <typename DerivedV, typename DerivedF>
@@ -684,6 +774,8 @@ IGL_INLINE igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>
                 const Eigen::PlainObjectBase<DerivedV> &_PD1,
                 const Eigen::PlainObjectBase<DerivedV> &_PD2,
                 const Eigen::Matrix<int, Eigen::Dynamic, 1>&_singular,
+                const Eigen::Matrix<int, Eigen::Dynamic, 3>&_mismatch,
+                const Eigen::Matrix<int, Eigen::Dynamic, 3>&_seams,
                 const MeshSystemInfo &_systemInfo
 ):
 V(_V),
@@ -695,6 +787,8 @@ TTi(_TTi),
 PD1(_PD1),
 PD2(_PD2),
 singular(_singular),
+mismatch(_mismatch),
+seams(_seams),
 systemInfo(_systemInfo)
 {
   n_fixed_vars = 0;
@@ -748,10 +842,10 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::findFi
   Hard_constraints.clear();
 
   n_fixed_vars=0;
-  //fix the first singularity
+  //fix the first singularity that has an incident face
   for (unsigned int v=0;v<V.rows();v++)
   {
-    if (singular(v))
+    if (singular(v) && v < VF.size() && !VF[v].empty())
     {
       addFixedVertex(v);
       UV.row(v) << 0,0;
@@ -759,10 +853,19 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::findFi
     }
   }
 
-  ///if anything fixed fix the first
-  addFixedVertex(0);
-  UV.row(0) << 0,0;
-  std::cerr << "No vertices to fix, I am fixing the first vertex to the origin!" << std::endl;
+  ///if nothing fixed, fix the first vertex with an incident face
+  for (unsigned int v=0;v<V.rows();v++)
+  {
+    if (v < VF.size() && !VF[v].empty())
+    {
+      addFixedVertex(v);
+      UV.row(v) << 0,0;
+      std::cerr << "No vertices to fix, I am fixing vertex " << v << " to the origin!" << std::endl;
+      return;
+    }
+  }
+  std::cerr << "ERROR: no vertex has an incident face; cannot fix any vertex." << std::endl;
+  throw std::runtime_error("No vertex to fix");
 }
 
 ///find hard constraint depending if using or not
@@ -777,6 +880,8 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::findFi
 template <typename DerivedV, typename DerivedF>
 IGL_INLINE int igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::getFirstVertexIndex(int v)
 {
+  if (v < 0 || v >= static_cast<int>(VF.size()) || VF[v].empty())
+    return -1;
   return Fcut(VF[v][0],VFi[v][0]);
 }
 
@@ -794,6 +899,7 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::fixBlo
     ///get first index of the vertex that must blocked
     //int index=v->vertex_index[0];
     int index = getFirstVertexIndex(v);
+    assert(index >= 0); // findFixedVertField guarantees v has an incident face
 
     ///multiply times 2 because of uv
     int indexvert = index*2;
@@ -826,6 +932,7 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::addSin
     if (singular(v))
     {
       int index0= getFirstVertexIndex(v);
+      if (index0 < 0) continue;
       ids_to_round.push_back( index0*2   );
       ids_to_round.push_back((index0*2)+1);
     }
@@ -838,8 +945,16 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::addToR
   for(auto index : ids)
   {
     if (index < 0 || index >= V.rows())
+    {
       std::cerr << "WARNING: Ignored round vertex constraint, vertex " << index << " does not exist in the mesh." << std::endl;
+      continue;
+    }
     int index0 = getFirstVertexIndex(index);
+    if (index0 < 0)
+    {
+      std::cerr << "WARNING: Ignored round vertex constraint, vertex " << index << " has no incident face." << std::endl;
+      continue;
+    }
     ids_to_round.push_back( index0 * 2   );
     ids_to_round.push_back((index0 * 2)+1);
   }
@@ -1036,12 +1151,22 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::buildU
 
   for (unsigned int i = 0; i < num_userdefined_constraint; i++)
   {
-    for (unsigned int j = 0; j < userdefined_constraints[i].size()-1; ++j)
+    const size_t row_size = userdefined_constraints[i].size();
+    if (row_size == 0)
     {
-      Constraints.coeffRef(constr_row, j) = userdefined_constraints[i][j];
+      std::cerr << "WARNING: empty user-defined constraint row " << i << " skipped." << std::endl;
+      constraints_rhs[constr_row] = 0;
+      constr_row += 1;
+      continue;
+    }
+    for (size_t j = 0; j + 1 < row_size; ++j)
+    {
+      const int v = userdefined_constraints[i][j];
+      if (v != 0)
+        Constraints.coeffRef(constr_row, j) = v;
     }
 
-    constraints_rhs[constr_row] = userdefined_constraints[i][userdefined_constraints[i].size()-1];
+    constraints_rhs[constr_row] = userdefined_constraints[i][row_size-1];
     constr_row +=1;
   }
 }
@@ -1052,7 +1177,7 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::mixedI
                                                                                             bool directRound,
                                                                                             unsigned int localIter)
 {
-  COMISO::ConstrainedSolver::Vector _X(n_vert_vars*2+n_integer_vars*2);
+  COMISO::ConstrainedSolver::Vector _X = COMISO::ConstrainedSolver::Vector::Zero(n_vert_vars*2+n_integer_vars*2);
   X = std::vector<double>((n_vert_vars+n_integer_vars)*2);
   if (DEBUGPRINT)
     printf("\n ALLOCATED X \n");
@@ -1074,7 +1199,7 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::mixedI
   if (DEBUGPRINT)
     printf("\n ALLOCATED QMM STRUCTURES \n");
 
-  COMISO::ConstrainedSolver::Vector B(sizeMatrix);
+  COMISO::ConstrainedSolver::Vector B = COMISO::ConstrainedSolver::Vector::Zero(sizeMatrix);
   //std::vector<double> B(sizeMatrix,0);  // rhs
 
   if (DEBUGPRINT)
@@ -1182,6 +1307,179 @@ IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::addSha
 
 }
 
+template <typename DerivedV, typename DerivedF>
+IGL_INLINE int igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::faceOfHalfEdge(int v0, int v1, int &k_out) const
+{
+  if (v0 < 0 || v0 >= static_cast<int>(VF.size())) return -1;
+  for (int f : VF[v0])
+  {
+    for (int k = 0; k < 3; ++k)
+    {
+      if (F(f, k) == v0 && F(f, (k+1) % 3) == v1)
+      {
+        k_out = k;
+        return f;
+      }
+    }
+  }
+  k_out = -1;
+  return -1;
+}
+
+template <typename DerivedV, typename DerivedF>
+IGL_INLINE int igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::fanWalkRotation(int vertex, int f_from, int k_in_from, int f_to) const
+{
+  // Walk the face fan around `vertex` starting from f_from, leaving via the
+  // half-edge "after the incoming half-edge" (CCW around vertex), until
+  // f_to is reached. Accumulate seam crossings as 90-degree mismatch
+  // rotations using the same 1<->3 swap that miq applies in
+  // buildSeamConstraintsExplicitTranslation.
+  if (f_from == f_to) return 0;
+
+  int rot = 0; // accumulated quarter turns mod 4
+  int f_curr = f_from;
+  int k_in = k_in_from;
+  // safety bound: a vertex fan can't have more faces than F.rows()
+  const int max_steps = static_cast<int>(F.rows()) + 1;
+  for (int step = 0; step < max_steps; ++step)
+  {
+    // local index of vertex in f_curr
+    const int k_v = (k_in + 1) % 3;
+    assert(F(f_curr, k_v) == vertex);
+    // exit edge of f_curr at vertex: local edge index k_v
+    const int k_exit = k_v;
+    if (seams(f_curr, k_exit) != 0)
+    {
+      int interval = mismatch(f_curr, k_exit);
+      // mirror buildSeamConstraintsExplicitTranslation's 1<->3 swap
+      if (interval == 1) interval = 3;
+      else if (interval == 3) interval = 1;
+      rot = (rot + interval) % 4;
+    }
+    int f_next = TT(f_curr, k_exit);
+    if (f_next < 0)
+    {
+      // Boundary encountered before reaching f_to; fan is open. Mesh was
+      // assumed manifold + closed; bail out.
+      throw std::runtime_error("fanWalkRotation hit a boundary before reaching target face.");
+    }
+    int k_next = TTi(f_curr, k_exit);
+    f_curr = f_next;
+    // The half-edge we just crossed exits f_curr at edge k_exit as
+    // (vertex, third). Its reverse lives in f_next at local edge k_next as
+    // (third, vertex), i.e. F(f_next, k_next) = third and
+    // F(f_next, (k_next+1)%3) = vertex. That reversed half-edge IS the
+    // incoming half-edge for the next iteration, so k_in = k_next.
+    k_in = k_next;
+    if (f_curr == f_to) return rot;
+  }
+  std::cerr << "WARNING: fanWalkRotation did not reach target face within bounds." << std::endl;
+  return rot;
+}
+
+template <typename DerivedV, typename DerivedF>
+IGL_INLINE void igl::copyleft::comiso::PoissonSolver<DerivedV, DerivedF>::addChainConstraint(const std::vector<int> &chain, int axis)
+{
+  const int n = static_cast<int>(chain.size());
+  // A closed loop has chain.front() == chain.back() (e.g. [v0,v1,v2,v0]).
+  // An open chain has distinct endpoints (e.g. [v0,v1,v2]).
+  // In both cases edges are consecutive pairs chain[i] -> chain[i+1], i=0..n-2.
+  const bool is_closed = (n >= 2 && chain.front() == chain.back());
+  if (n < 2 || (is_closed && n < 3))
+  {
+    std::cerr << "WARNING: chain too short; skipped." << std::endl;
+    return;
+  }
+  if (axis != 0 && axis != 1)
+  {
+    std::cerr << "WARNING: chain_orthogonal_axis must be 0 or 1; got " << axis << "; skipped." << std::endl;
+    return;
+  }
+
+  const int num_edges = n - 1;
+  std::vector<int> face(num_edges);
+  std::vector<int> k_local(num_edges);
+  for (int i = 0; i < num_edges; ++i)
+  {
+    const int v_curr = chain[i];
+    const int v_next = chain[i + 1];
+    int k = -1;
+    int f = faceOfHalfEdge(v_curr, v_next, k);
+    if (f < 0)
+    {
+      std::cerr << "WARNING: chain edge (" << v_curr << "," << v_next
+                << ") is not an oriented half-edge of the mesh; chain skipped." << std::endl;
+      return;
+    }
+    face[i] = f;
+    k_local[i] = k;
+  }
+
+  // Walk the chain, tracking the current orthogonal axis n_i in {(1,0),(0,1),(-1,0),(0,-1)}.
+  // Encoded as (rot_idx) where (1,0)=0, (0,1)=1, (-1,0)=2, (0,-1)=3 — i.e., the
+  // initial axis index is `axis`, and rotation by k quarter turns counter-clockwise
+  // takes (cos((axis+k)*pi/2), sin((axis+k)*pi/2)).
+  int rot_state = axis; // n_0 = axis (0=>+U, 1=>+V)
+
+  // Build sparse coefficient row indexed by (cut_vertex*2 + axis_index).
+  std::vector<int> c(systemInfo.num_vert_variables * 2 + 1, 0);
+
+  auto axis_components = [](int s) {
+    // returns (nx, ny) with values in {-1,0,1}
+    int nx = 0, ny = 0;
+    switch (((s % 4) + 4) % 4)
+    {
+      case 0: nx =  1; ny =  0; break;
+      case 1: nx =  0; ny =  1; break;
+      case 2: nx = -1; ny =  0; break;
+      case 3: nx =  0; ny = -1; break;
+    }
+    return std::make_pair(nx, ny);
+  };
+
+  for (int i = 0; i < num_edges; ++i)
+  {
+    const int f_i = face[i];
+    const int k_curr = k_local[i];
+    const int k_next = (k_curr + 1) % 3;
+    const int cut_curr = Fcut(f_i, k_curr);
+    const int cut_next = Fcut(f_i, k_next);
+
+    auto np = axis_components(rot_state);
+    const int nx = np.first;
+    const int ny = np.second;
+
+    // n_i . delta_i = nx*(UV[cut_next].x - UV[cut_curr].x) + ny*(UV[cut_next].y - UV[cut_curr].y)
+    if (nx != 0)
+    {
+      c[cut_next * 2 + 0] += nx;
+      c[cut_curr * 2 + 0] -= nx;
+    }
+    if (ny != 0)
+    {
+      c[cut_next * 2 + 1] += ny;
+      c[cut_curr * 2 + 1] -= ny;
+    }
+
+    // Advance rotation to next edge's frame around the shared vertex.
+    if (i + 1 < num_edges)
+    {
+      const int v_shared = chain[i + 1]; // safe: i+1 <= num_edges-1 = n-2 < n-1
+      const int f_next = face[i + 1];
+      if (f_i != f_next)
+      {
+        int dr = fanWalkRotation(v_shared, f_i, k_curr, f_next);
+        rot_state = (rot_state + dr) % 4;
+      }
+    }
+  }
+
+  // RHS = 0
+  c.back() = 0;
+  num_userdefined_constraint++;
+  userdefined_constraints.push_back(c);
+}
+
 
 
 template <typename DerivedV, typename DerivedF, typename DerivedU>
@@ -1203,19 +1501,38 @@ IGL_INLINE igl::copyleft::comiso::MIQ_class<DerivedV, DerivedF, DerivedU>::MIQ_c
         bool doRound,
         bool singularityRound,
         std::vector<int> roundVertices,
-        std::vector<std::vector<int> > hardFeatures):
+        std::vector<std::vector<int> > hardFeatures,
+        std::vector<std::vector<int> > chains,
+        std::vector<int> chain_orthogonal_axis):
 V(V_),
 F(F_)
 {
+  igl::Timer t_miq_total, t_outer;
+  t_miq_total.start();
+  t_outer.start();
+  auto outer_ms = [&](const char *name) {
+#if MIQ_TIMING_PRINT
+    double ms = t_outer.getElapsedTimeInMilliSec();
+    std::printf("[miq MIQ_class]    %-32s %10.3f ms\n", name, ms);
+    t_outer.start();
+#else
+    (void)name;
+#endif
+  };
+
   igl::cut_mesh(V, F, seams, Vcut, Fcut);
+  outer_ms("cut_mesh");
 
   igl::local_basis(V,F,B1,B2,B3);
+  outer_ms("local_basis");
   igl::triangle_triangle_adjacency(F,TT,TTi);
+  outer_ms("triangle_triangle_adjacency");
 
   // Prepare indexing for the linear system
   VertexIndexing<DerivedV, DerivedF> VInd(V, F, Vcut, Fcut, TT, TTi, mismatch, singular, seams);
 
   VInd.initSeamInfo();
+  outer_ms("VertexIndexing + initSeamInfo");
 
   // Assemble the system and solve
   PoissonSolver<DerivedV, DerivedF> PSolver(V,
@@ -1227,26 +1544,41 @@ F(F_)
                                             PD1_combed,
                                             PD2_combed,
                                             singular,
+                                            mismatch,
+                                            seams,
                                             VInd.systemInfo);
   stiffnessVector = Eigen::VectorXd::Constant(F.rows(),1);
+  outer_ms("PoissonSolver ctor");
 
 
   if (iter > 0) // do stiffening
   {
     for (unsigned int i=0;i<iter;i++)
     {
+      igl::Timer t_iter;
+      t_iter.start();
+#if MIQ_TIMING_PRINT
+      std::printf("[miq MIQ_class]    --- stiffening iter %u ---\n", i);
+#endif
       PSolver.solvePoisson(stiffnessVector, gradientSize, 1.f, directRound, localIter, doRound, singularityRound,
-                           roundVertices, hardFeatures);
+                           roundVertices, hardFeatures, chains, chain_orthogonal_axis);
       int nflips=NumFlips(PSolver.WUV);
       bool folded = updateStiffeningJacobianDistorsion(gradientSize,PSolver.WUV);
       printf("ITERATION %d FLIPS %d \n",i,nflips);
+#if MIQ_TIMING_PRINT
+      double iter_ms = t_iter.getElapsedTimeInMilliSec();
+      std::printf("[miq MIQ_class]    stiffening iter %u total: %.3f ms (flips=%d, folded=%d)\n",
+                  i, iter_ms, nflips, folded ? 1 : 0);
+      t_outer.start();
+#endif
       if (!folded)break;
     }
   }
   else
   {
     PSolver.solvePoisson(stiffnessVector, gradientSize, 1.f, directRound, localIter, doRound, singularityRound,
-                         roundVertices, hardFeatures);
+                         roundVertices, hardFeatures, chains, chain_orthogonal_axis);
+    outer_ms("solvePoisson (no stiffening)");
   }
 
   int nflips=NumFlips(PSolver.WUV);
@@ -1255,6 +1587,12 @@ F(F_)
   UV_out = PSolver.UV_out;
   FUV_out = PSolver.Fcut;
   fflush(stdout);
+
+#if MIQ_TIMING_PRINT
+  double miq_total_ms = t_miq_total.getElapsedTimeInMilliSec();
+  std::printf("[miq MIQ_class]    %-32s %10.3f ms (iter=%u, n_chains=%zu)\n",
+              "MIQ_class TOTAL", miq_total_ms, iter, chains.size());
+#endif
 }
 
 template <typename DerivedV, typename DerivedF, typename DerivedU>
@@ -1460,7 +1798,9 @@ IGL_INLINE void igl::copyleft::comiso::miq(
   bool doRound,
   bool singularityRound,
   const std::vector<int> &roundVertices,
-  const std::vector<std::vector<int>> &hardFeatures)
+  const std::vector<std::vector<int>> &hardFeatures,
+  const std::vector<std::vector<int>> &chains,
+  const std::vector<int> &chain_orthogonal_axis)
 {
   gradientSize = gradientSize/(V.colwise().maxCoeff()-V.colwise().minCoeff()).norm();
 
@@ -1481,7 +1821,9 @@ IGL_INLINE void igl::copyleft::comiso::miq(
     doRound,
     singularityRound,
     roundVertices,
-    hardFeatures);
+    hardFeatures,
+    chains,
+    chain_orthogonal_axis);
 
   miq.extractUV(UV,FUV);
 }
@@ -1502,7 +1844,9 @@ IGL_INLINE void igl::copyleft::comiso::miq(
   bool doRound,
   bool singularityRound,
   const std::vector<int> &roundVertices,
-  const std::vector<std::vector<int>> &hardFeatures)
+  const std::vector<std::vector<int>> &hardFeatures,
+  const std::vector<std::vector<int>> &chains,
+  const std::vector<int> &chain_orthogonal_axis)
 {
 
   DerivedV BIS1, BIS2;
@@ -1540,12 +1884,14 @@ IGL_INLINE void igl::copyleft::comiso::miq(
     doRound,
     singularityRound,
     roundVertices,
-    hardFeatures);
+    hardFeatures,
+    chains,
+    chain_orthogonal_axis);
 }
 
 #ifdef IGL_STATIC_LIBRARY
 // Explicit template instantiation
-template void igl::copyleft::comiso::miq<Eigen::Matrix<double, -1, 3, 0, -1, 3>, Eigen::Matrix<int, -1, 3, 0, -1, 3>, Eigen::Matrix<double, -1, -1, 0, -1, -1> >(Eigen::PlainObjectBase<Eigen::Matrix<double, -1, 3, 0, -1, 3> > const &, Eigen::PlainObjectBase<Eigen::Matrix<int, -1, 3, 0, -1, 3> > const &, Eigen::PlainObjectBase<Eigen::Matrix<double, -1, 3, 0, -1, 3> > const &, Eigen::PlainObjectBase<Eigen::Matrix<double, -1, 3, 0, -1, 3> > const &, Eigen::PlainObjectBase<Eigen::Matrix<double, -1, -1, 0, -1, -1> > &, Eigen::PlainObjectBase<Eigen::Matrix<int, -1, 3, 0, -1, 3> > &, double, double, bool, unsigned int, unsigned int, bool, bool, const std::vector<int> &, const std::vector<std::vector<int>> &);
-template void igl::copyleft::comiso::miq<Eigen::Matrix<double, -1, -1, 0, -1, -1>, Eigen::Matrix<int, -1, -1, 0, -1, -1>, Eigen::Matrix<double, -1, -1, 0, -1, -1> >(Eigen::PlainObjectBase<Eigen::Matrix<double, -1, -1, 0, -1, -1> > const &, Eigen::PlainObjectBase<Eigen::Matrix<int, -1, -1, 0, -1, -1> > const &, Eigen::PlainObjectBase<Eigen::Matrix<double, -1, -1, 0, -1, -1> > const &, Eigen::PlainObjectBase<Eigen::Matrix<double, -1, -1, 0, -1, -1> > const &, Eigen::Matrix<int, -1, 3, 0, -1, 3> const &, Eigen::Matrix<int, -1, 1, 0, -1, 1> const &, Eigen::Matrix<int, -1, 3, 0, -1, 3> const &, Eigen::PlainObjectBase<Eigen::Matrix<double, -1, -1, 0, -1, -1> > &, Eigen::PlainObjectBase<Eigen::Matrix<int, -1, -1, 0, -1, -1> > &, double, double, bool, unsigned int, unsigned int, bool, bool, const std::vector<int> &, const std::vector<std::vector<int>> &);
-template void igl::copyleft::comiso::miq<Eigen::Matrix<double, -1, -1, 0, -1, -1>, Eigen::Matrix<int, -1, -1, 0, -1, -1>, Eigen::Matrix<double, -1, -1, 0, -1, -1> >(Eigen::PlainObjectBase<Eigen::Matrix<double, -1, -1, 0, -1, -1> > const &, Eigen::PlainObjectBase<Eigen::Matrix<int, -1, -1, 0, -1, -1> > const &, Eigen::PlainObjectBase<Eigen::Matrix<double, -1, -1, 0, -1, -1> > const &, Eigen::PlainObjectBase<Eigen::Matrix<double, -1, -1, 0, -1, -1> > const &, Eigen::PlainObjectBase<Eigen::Matrix<double, -1, -1, 0, -1, -1> > &, Eigen::PlainObjectBase<Eigen::Matrix<int, -1, -1, 0, -1, -1> > &, double, double, bool, unsigned int, unsigned int, bool, bool, const std::vector<int> &, const std::vector<std::vector<int>> &);
+template void igl::copyleft::comiso::miq<Eigen::Matrix<double, -1, 3, 0, -1, 3>, Eigen::Matrix<int, -1, 3, 0, -1, 3>, Eigen::Matrix<double, -1, -1, 0, -1, -1> >(Eigen::PlainObjectBase<Eigen::Matrix<double, -1, 3, 0, -1, 3> > const &, Eigen::PlainObjectBase<Eigen::Matrix<int, -1, 3, 0, -1, 3> > const &, Eigen::PlainObjectBase<Eigen::Matrix<double, -1, 3, 0, -1, 3> > const &, Eigen::PlainObjectBase<Eigen::Matrix<double, -1, 3, 0, -1, 3> > const &, Eigen::PlainObjectBase<Eigen::Matrix<double, -1, -1, 0, -1, -1> > &, Eigen::PlainObjectBase<Eigen::Matrix<int, -1, 3, 0, -1, 3> > &, double, double, bool, unsigned int, unsigned int, bool, bool, const std::vector<int> &, const std::vector<std::vector<int>> &, const std::vector<std::vector<int>> &, const std::vector<int> &);
+template void igl::copyleft::comiso::miq<Eigen::Matrix<double, -1, -1, 0, -1, -1>, Eigen::Matrix<int, -1, -1, 0, -1, -1>, Eigen::Matrix<double, -1, -1, 0, -1, -1> >(Eigen::PlainObjectBase<Eigen::Matrix<double, -1, -1, 0, -1, -1> > const &, Eigen::PlainObjectBase<Eigen::Matrix<int, -1, -1, 0, -1, -1> > const &, Eigen::PlainObjectBase<Eigen::Matrix<double, -1, -1, 0, -1, -1> > const &, Eigen::PlainObjectBase<Eigen::Matrix<double, -1, -1, 0, -1, -1> > const &, Eigen::Matrix<int, -1, 3, 0, -1, 3> const &, Eigen::Matrix<int, -1, 1, 0, -1, 1> const &, Eigen::Matrix<int, -1, 3, 0, -1, 3> const &, Eigen::PlainObjectBase<Eigen::Matrix<double, -1, -1, 0, -1, -1> > &, Eigen::PlainObjectBase<Eigen::Matrix<int, -1, -1, 0, -1, -1> > &, double, double, bool, unsigned int, unsigned int, bool, bool, const std::vector<int> &, const std::vector<std::vector<int>> &, const std::vector<std::vector<int>> &, const std::vector<int> &);
+template void igl::copyleft::comiso::miq<Eigen::Matrix<double, -1, -1, 0, -1, -1>, Eigen::Matrix<int, -1, -1, 0, -1, -1>, Eigen::Matrix<double, -1, -1, 0, -1, -1> >(Eigen::PlainObjectBase<Eigen::Matrix<double, -1, -1, 0, -1, -1> > const &, Eigen::PlainObjectBase<Eigen::Matrix<int, -1, -1, 0, -1, -1> > const &, Eigen::PlainObjectBase<Eigen::Matrix<double, -1, -1, 0, -1, -1> > const &, Eigen::PlainObjectBase<Eigen::Matrix<double, -1, -1, 0, -1, -1> > const &, Eigen::PlainObjectBase<Eigen::Matrix<double, -1, -1, 0, -1, -1> > &, Eigen::PlainObjectBase<Eigen::Matrix<int, -1, -1, 0, -1, -1> > &, double, double, bool, unsigned int, unsigned int, bool, bool, const std::vector<int> &, const std::vector<std::vector<int>> &, const std::vector<std::vector<int>> &, const std::vector<int> &);
 #endif

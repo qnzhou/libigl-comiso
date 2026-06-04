@@ -73,7 +73,9 @@ NB_MODULE(pyigl_comiso, m)
            bool doRound,
            bool singularityRound,
            const std::vector<int>& roundVertices,
-           const std::vector<std::vector<int>>& hardFeatures) {
+           const std::vector<std::vector<int>>& hardFeatures,
+           const std::vector<std::vector<int>>& chains,
+           const std::vector<int>& chain_orthogonal_axis) {
             MatrixXd UV;
             MatrixXi FUV;
             igl::copyleft::comiso::miq(
@@ -91,7 +93,9 @@ NB_MODULE(pyigl_comiso, m)
                 doRound,
                 singularityRound,
                 roundVertices,
-                hardFeatures);
+                hardFeatures,
+                chains,
+                chain_orthogonal_axis);
             return std::make_tuple(UV, FUV);
         },
         "V"_a,
@@ -107,6 +111,8 @@ NB_MODULE(pyigl_comiso, m)
         "singularityRound"_a = true,
         "roundVertices"_a = std::vector<int>(),
         "hardFeatures"_a = std::vector<std::vector<int>>(),
+        "chains"_a = std::vector<std::vector<int>>(),
+        "chain_orthogonal_axis"_a = std::vector<int>(),
         R"(Global seamless parametrization aligned with a given per-face Jacobian.
 
 Based on "Mixed-Integer Quadrangulation" by D. Bommes, H. Zimmer, L. Kobbelt
@@ -124,7 +130,9 @@ ACM SIGGRAPH 2009, Article No. 77
 :param doRound: enables the integer rounding (disabling useful for debugging)
 :param singularityRound: round singularities' coordinates to nearest integers
 :param roundVertices: additional vertices that should be snapped to integer coordinates
-:param hardFeatures: pairs of vertices that belong to edges that should be snapped to integer coordinates
+:param hardFeatures: list of (face_id, local_vertex_id) pairs identifying edges to be snapped to integer coordinates; local_vertex_id is the index of the edge's first vertex within the face (0, 1, or 2)
+:param chains: list of vertex chains; a closed loop repeats the first vertex at the end (e.g. [v_0,...,v_{n-1},v_0]); an open chain does not (e.g. [v_0,...,v_{n-1}]); edges are consecutive pairs in both cases
+:param chain_orthogonal_axis: per-loop initial orthogonal axis in the starting face's UV frame (0 = U, 1 = V); when non-empty must match len(chains)
 :returns: UV, FUV where UV is #UV by 2 list of vertices in 2D and FUV is #FUV by 3 list of face indices in UV)");
 
     // MIQ advanced version with pre-combed bisectors
@@ -145,7 +153,9 @@ ACM SIGGRAPH 2009, Article No. 77
            bool doRound,
            bool singularityRound,
            const std::vector<int>& roundVertices,
-           const std::vector<std::vector<int>>& hardFeatures) {
+           const std::vector<std::vector<int>>& hardFeatures,
+           const std::vector<std::vector<int>>& chains,
+           const std::vector<int>& chain_orthogonal_axis) {
             MatrixXd UV;
             MatrixXi FUV;
             igl::copyleft::comiso::miq(
@@ -166,7 +176,9 @@ ACM SIGGRAPH 2009, Article No. 77
                 doRound,
                 singularityRound,
                 roundVertices,
-                hardFeatures);
+                hardFeatures,
+                chains,
+                chain_orthogonal_axis);
             return std::make_tuple(UV, FUV);
         },
         "V"_a,
@@ -185,6 +197,8 @@ ACM SIGGRAPH 2009, Article No. 77
         "singularityRound"_a = true,
         "roundVertices"_a = std::vector<int>(),
         "hardFeatures"_a = std::vector<std::vector<int>>(),
+        "chains"_a = std::vector<std::vector<int>>(),
+        "chain_orthogonal_axis"_a = std::vector<int>(),
         R"(MIQ helper function with pre-combed bisectors for an already cut mesh.
 
 :param V: #V by 3 list of mesh vertex 3D positions
@@ -202,7 +216,9 @@ ACM SIGGRAPH 2009, Article No. 77
 :param doRound: enables the integer rounding (disabling useful for debugging)
 :param singularityRound: round singularities' coordinates to nearest integers
 :param roundVertices: additional vertices that should be snapped to integer coordinates
-:param hardFeatures: pairs of vertices that belong to edges that should be snapped to integer coordinates
+:param hardFeatures: list of (face_id, local_vertex_id) pairs identifying edges to be snapped to integer coordinates; local_vertex_id is the index of the edge's first vertex within the face (0, 1, or 2)
+:param chains: list of vertex chains; a closed loop repeats the first vertex at the end (e.g. [v_0,...,v_{n-1},v_0]); an open chain does not (e.g. [v_0,...,v_{n-1}]); edges are consecutive pairs in both cases
+:param chain_orthogonal_axis: per-loop initial orthogonal axis in the starting face's UV frame (0 = U, 1 = V); when non-empty must match len(chains)
 :returns: UV, FUV where UV is #UV by 2 list of vertices in 2D and FUV is #FUV by 3 list of face indices in UV)");
 
     // Frame Field
