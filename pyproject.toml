@@ -18,6 +18,7 @@ dependencies = [
 ]
 
 [tool.scikit-build]
+strict-config = false
 install.components = ["LIBIGL_COMISO_Python_Runtime"]
 wheel.packages = ["python/igl_comiso"]
 build-dir = "build-python"
